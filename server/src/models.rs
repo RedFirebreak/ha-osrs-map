@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub const SHARED_MEMBER: &str = "@SHARED";
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -114,4 +113,96 @@ pub struct CaptchaVerifyResponse {
     // NOTE: unused
     // #[serde(rename = "error-codes", default)]
     // pub error_codes: std::vec::Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PairCodeRequest {}
+
+#[derive(Serialize)]
+pub struct PairCodeResponse {
+    pub ok: bool,
+    pub code: String,
+    pub expires_in: u64,
+}
+
+#[derive(Deserialize)]
+pub struct PairRequest {
+    pub code: String,
+}
+
+#[derive(Serialize)]
+pub struct PairResponse {
+    pub ok: bool,
+    pub device_id: String,
+    pub token: String,
+}
+
+#[derive(Deserialize)]
+pub struct IngestLocation {
+    pub x: i32,
+    pub y: i32,
+    pub plane: i32,
+}
+
+#[derive(Deserialize)]
+pub struct IngestHealthOrPrayer {
+    pub current: i32,
+    pub max: i32,
+}
+
+#[derive(Deserialize)]
+pub struct IngestSpellbook {
+    pub id: Option<i32>,
+    pub name: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct IngestSkill {
+    pub xp: Option<i32>,
+    #[serde(default)]
+    pub level: Option<i32>,
+    #[serde(default)]
+    pub boosted_level: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct IngestStats {
+    pub skills: Option<std::collections::HashMap<String, IngestSkill>>,
+}
+
+#[derive(Deserialize)]
+pub struct IngestItem {
+    pub id: Option<i32>,
+    pub quantity: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct IngestItems {
+    pub items: Option<Vec<IngestItem>>,
+}
+
+#[derive(Deserialize)]
+pub struct IngestPlayer {
+    pub name: String,
+    #[serde(rename = "accountType")]
+    pub account_type: Option<String>,
+    pub world: Option<String>,
+    pub location: Option<IngestLocation>,
+    pub health: Option<IngestHealthOrPrayer>,
+    #[serde(rename = "prayerPoints")]
+    pub prayer_points: Option<IngestHealthOrPrayer>,
+    pub spellbook: Option<IngestSpellbook>,
+    pub stats: Option<IngestStats>,
+    pub inventory: Option<IngestItems>,
+    pub equipment: Option<IngestItems>,
+}
+
+#[derive(Deserialize)]
+pub struct IngestPayload {
+    pub player: IngestPlayer,
+    #[serde(default)]
+    pub events: Option<serde_json::Value>,
+    pub state: Option<String>,
+    #[serde(rename = "tickDelay")]
+    pub tick_delay: Option<i32>,
 }

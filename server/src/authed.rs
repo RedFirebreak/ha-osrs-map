@@ -2,7 +2,7 @@ use crate::auth_middleware::Authenticated;
 use crate::db;
 use crate::error::ApiError;
 use crate::models::{
-    AmIInGroupRequest, GroupMember, GroupSkillData, RenameGroupMember, SHARED_MEMBER,
+    AmIInGroupRequest, GroupMember, GroupSkillData, RenameGroupMember,
 };
 use crate::validators::{valid_name, validate_member_prop_length};
 use actix_web::{delete, get, post, put, web, Error, HttpResponse};
@@ -18,12 +18,6 @@ pub async fn add_group_member(
     group_member: web::Json<GroupMember>,
     db_pool: web::Data<Pool>,
 ) -> Result<HttpResponse, Error> {
-    if group_member.name.eq(SHARED_MEMBER) {
-        return Ok(
-            HttpResponse::BadRequest().body(format!("Member name {} not allowed", SHARED_MEMBER))
-        );
-    }
-
     if !valid_name(&group_member.name) {
         return Ok(HttpResponse::BadRequest()
             .body(format!("Member name {} is not valid", group_member.name)));
@@ -40,12 +34,6 @@ pub async fn delete_group_member(
     group_member: web::Json<GroupMember>,
     db_pool: web::Data<Pool>,
 ) -> Result<HttpResponse, Error> {
-    if group_member.name.eq(SHARED_MEMBER) {
-        return Ok(
-            HttpResponse::BadRequest().body(format!("Member name {} not allowed", SHARED_MEMBER))
-        );
-    }
-
     let mut client: Client = db_pool.get().await.map_err(ApiError::PoolError)?;
     db::delete_group_member(&mut client, auth.group_id, &group_member.name).await?;
     Ok(HttpResponse::Ok().finish())
@@ -57,12 +45,6 @@ pub async fn rename_group_member(
     rename_member: web::Json<RenameGroupMember>,
     db_pool: web::Data<Pool>,
 ) -> Result<HttpResponse, Error> {
-    if rename_member.original_name.eq(SHARED_MEMBER) || rename_member.new_name.eq(SHARED_MEMBER) {
-        return Ok(
-            HttpResponse::BadRequest().body(format!("Member name {} not allowed", SHARED_MEMBER))
-        );
-    }
-
     if !valid_name(&rename_member.new_name) {
         return Ok(HttpResponse::BadRequest().body(format!(
             "Member name {} is not valid",
@@ -106,7 +88,6 @@ pub async fn update_group_member(
     validate_member_prop_length("inventory", &group_member_inner.inventory, 56, 56)?;
     validate_member_prop_length("equipment", &group_member_inner.equipment, 28, 28)?;
     validate_member_prop_length("bank", &group_member_inner.bank, 0, 3000)?;
-    validate_member_prop_length("shared_bank", &group_member_inner.shared_bank, 0, 1000)?;
     validate_member_prop_length("rune_pouch", &group_member_inner.rune_pouch, 6, 8)?;
     validate_member_prop_length("seed_vault", &group_member_inner.seed_vault, 0, 500)?;
     validate_member_prop_length("deposited", &group_member_inner.deposited, 0, 200)?;

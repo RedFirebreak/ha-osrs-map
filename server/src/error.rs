@@ -25,6 +25,10 @@ pub enum ApiError {
     IsMemberInGroupError(tokio_postgres::error::Error),
     #[from(ignore)]
     GetSkillsDataError(tokio_postgres::error::Error),
+    #[from(ignore)]
+    PairingCodeError(tokio_postgres::error::Error),
+    #[from(ignore)]
+    DeviceAuthError(tokio_postgres::error::Error),
     GroupFullError,
     ReqwestError(reqwest::Error),
     GroupMemberValidationError(String),
@@ -64,6 +68,12 @@ impl ResponseError for ApiError {
             ApiError::SerdeJsonError(ref err) => {
                 log::error!("SerdeJsonError: {}", err);
                 HttpResponse::InternalServerError().body(format!("SerdeJsonError: {}", err))
+            }
+            ApiError::PairingCodeError(ref _err) => {
+                HttpResponse::BadRequest().body("Invalid or expired pairing code")
+            }
+            ApiError::DeviceAuthError(ref _err) => {
+                HttpResponse::Unauthorized().body("Invalid device token")
             }
             ApiError::GroupFullError => HttpResponse::BadRequest()
                 .body("Group has already reached the maximum amount of players"),

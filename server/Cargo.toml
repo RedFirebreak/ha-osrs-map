@@ -29,6 +29,7 @@ arc-swap = "1.7.1"
 reqwest = { version = "0.12.23", features = ["json"] }
 mimalloc = "0.1.48"
 futures-util = "0.3.31"
+rand = "0.9"
 
 [profile.dev]
 opt-level = 0
