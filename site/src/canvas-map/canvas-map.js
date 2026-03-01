@@ -132,7 +132,6 @@ export class CanvasMap extends BaseElement {
     this.playerMarkers = new Map();
 
     for (const member of members) {
-      if (member.name === "@SHARED") continue;
       this.handleUpdatedCoordinates(member);
     }
   }

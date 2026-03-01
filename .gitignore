@@ -1,2 +1,5 @@
 .#*
 .env
+server/secret
+server/config.toml
+node_modules
