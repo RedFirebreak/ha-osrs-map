@@ -115,9 +115,6 @@ pub struct CaptchaVerifyResponse {
     // pub error_codes: std::vec::Vec<String>,
 }
 
-#[derive(Deserialize)]
-pub struct PairCodeRequest {}
-
 #[derive(Serialize)]
 pub struct PairCodeResponse {
     pub ok: bool,
@@ -151,12 +148,14 @@ pub struct IngestHealthOrPrayer {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct IngestSpellbook {
     pub id: Option<i32>,
     pub name: Option<String>,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct IngestSkill {
     pub xp: Option<i32>,
     #[serde(default)]
@@ -182,6 +181,7 @@ pub struct IngestItems {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct IngestPlayer {
     pub name: String,
     #[serde(rename = "accountType")]
@@ -198,6 +198,7 @@ pub struct IngestPlayer {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct IngestPayload {
     pub player: IngestPlayer,
     #[serde(default)]

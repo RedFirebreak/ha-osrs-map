@@ -29,7 +29,6 @@ pub enum ApiError {
     PairingCodeError(tokio_postgres::error::Error),
     #[from(ignore)]
     DeviceAuthError(tokio_postgres::error::Error),
-    GroupFullError,
     ReqwestError(reqwest::Error),
     GroupMemberValidationError(String),
 }
@@ -75,8 +74,6 @@ impl ResponseError for ApiError {
             ApiError::DeviceAuthError(ref _err) => {
                 HttpResponse::Unauthorized().body("Invalid device token")
             }
-            ApiError::GroupFullError => HttpResponse::BadRequest()
-                .body("Group has already reached the maximum amount of players"),
             ApiError::ReqwestError(ref err) => {
                 log::error!("ReqwestError: {}", err);
                 HttpResponse::InternalServerError().body(format!("ReqwestError: {}", err))
