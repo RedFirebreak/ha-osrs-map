@@ -175,6 +175,8 @@ pub struct IngestItem {
     pub quantity: Option<i32>,
     #[serde(default)]
     pub slot: Option<usize>,
+    #[serde(default, rename = "equipmentSlot")]
+    pub equipment_slot: Option<String>,
 }
 
 #[derive(Deserialize)]

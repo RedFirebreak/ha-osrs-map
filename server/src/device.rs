@@ -74,6 +74,25 @@ pub async fn pair_device(
     }))
 }
 
+// Maps RuneLite equipmentSlot string names to frontend EquipmentSlot indices
+// (see site/src/player-equipment/player-equipment.js)
+fn equipment_slot_index(slot_name: &str) -> Option<usize> {
+    match slot_name {
+        "HEAD" => Some(0),
+        "CAPE" => Some(1),
+        "AMULET" => Some(2),
+        "WEAPON" => Some(3),
+        "BODY" => Some(4),
+        "SHIELD" => Some(5),
+        "LEGS" => Some(7),
+        "GLOVES" => Some(9),
+        "BOOTS" => Some(10),
+        "RING" => Some(12),
+        "AMMO" => Some(13),
+        _ => None,
+    }
+}
+
 fn convert_ingest_to_group_member(payload: &IngestPayload, group_id: i64) -> GroupMember {
     let player = &payload.player;
 
@@ -144,21 +163,18 @@ fn convert_ingest_to_group_member(payload: &IngestPayload, group_id: i64) -> Gro
     let equipment = player.equipment.as_ref().and_then(|eq| {
         eq.items.as_ref().map(|items| {
             let mut flat = vec![0i32; 28]; // 14 slots × 2
-            let has_slots = items.iter().any(|item| item.slot.is_some());
 
-            if has_slots {
-                for item in items {
-                    if let Some(slot) = item.slot {
-                        if slot < 14 {
-                            flat[slot * 2] = item.id.unwrap_or(0);
-                            flat[slot * 2 + 1] = item.quantity.unwrap_or(0);
-                        }
+            for item in items {
+                // Prefer equipmentSlot name mapping, fall back to numeric slot
+                let slot_idx = item.equipment_slot.as_ref()
+                    .and_then(|name| equipment_slot_index(name))
+                    .or(item.slot);
+
+                if let Some(slot) = slot_idx {
+                    if slot < 14 {
+                        flat[slot * 2] = item.id.unwrap_or(0);
+                        flat[slot * 2 + 1] = item.quantity.unwrap_or(0);
                     }
-                }
-            } else {
-                for (i, item) in items.iter().take(14).enumerate() {
-                    flat[i * 2] = item.id.unwrap_or(0);
-                    flat[i * 2 + 1] = item.quantity.unwrap_or(0);
                 }
             }
             flat
