@@ -134,15 +134,6 @@ pub async fn login(
     let expires_at = Utc::now() + Duration::hours(SESSION_DURATION_HOURS);
     db::create_session(&client, &session_id, user_id, &expires_at).await?;
 
-    db::write_audit_log(
-        &client,
-        Some(user_id),
-        "login",
-        None,
-        Some(&format!("User '{}' logged in", body.username)),
-    )
-    .await?;
-
     let cookie = cookie::Cookie::build("session", session_id.clone())
         .path("/")
         .http_only(true)

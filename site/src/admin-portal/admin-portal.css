@@ -1,7 +1,30 @@
 .admin-portal__container {
-  max-width: 800px;
-  margin: 1rem auto;
-  padding: 1.5rem;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  height: calc(100vh - 100px);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.admin-portal__column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+
+.admin-portal__column h3 {
+  margin: 0 0 0.5rem 0;
+  flex-shrink: 0;
+}
+
+.admin-portal__scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .admin-portal__section {
@@ -14,18 +37,17 @@
 
 .admin-portal__user-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   padding: 0.5rem;
   border-bottom: 1px solid rgba(255,255,255,0.1);
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 .admin-portal__user-info {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .admin-portal__user-actions {
@@ -80,8 +102,6 @@
 }
 
 .admin-portal__audit-log {
-  max-height: 400px;
-  overflow-y: auto;
   font-size: 0.85rem;
 }
 
@@ -102,18 +122,17 @@
 
 .admin-portal__player-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   padding: 0.5rem;
   border-bottom: 1px solid rgba(255,255,255,0.1);
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 .admin-portal__player-info {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .admin-portal__player-actions {
