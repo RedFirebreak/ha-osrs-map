@@ -13,6 +13,20 @@ export class LoginPage extends BaseElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.checkSetupStatus();
+  }
+
+  async checkSetupStatus() {
+    try {
+      const status = await api.getSetupStatus();
+      if (status.needs_setup) {
+        window.history.pushState("", "", "/setup");
+        return;
+      }
+    } catch (e) {
+      // Continue to login if setup check fails
+    }
+
     this.render();
 
     const fieldRequiredValidator = (value) => {
@@ -38,23 +52,25 @@ export class LoginPage extends BaseElement {
     try {
       this.error.innerHTML = "";
       this.loginButton.disabled = true;
-      const name = this.name.value;
-      const token = this.token.value;
-      api.setCredentials(name, token);
-      const response = await api.amILoggedIn();
+      const username = this.name.value;
+      const password = this.token.value;
+
+      const response = await api.login(username, password);
       if (response.ok) {
-        storage.storeGroup(name, token);
+        const data = await response.json();
+        storage.storeSession(data.session_token, data.username, data.role);
+        api.setSession(data.session_token, data.username, data.role);
         window.history.pushState("", "", "/group");
       } else {
+        const body = await response.text();
         if (response.status === 401) {
-          this.error.innerHTML = "Group name or token is incorrect";
+          this.error.innerHTML = "Invalid username or password";
         } else {
-          const body = await response.text();
-          this.error.innerHTML = `Unable to login ${body}`;
+          this.error.innerHTML = `Unable to login: ${body}`;
         }
       }
     } catch (error) {
-      this.error.innerHTML = `Unable to login ${error}`;
+      this.error.innerHTML = `Unable to login: ${error}`;
     } finally {
       this.loginButton.disabled = false;
     }

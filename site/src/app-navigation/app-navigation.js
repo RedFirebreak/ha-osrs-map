@@ -8,10 +8,22 @@ export class AppNavigation extends BaseElement {
 
   /* eslint-disable no-unused-vars */
   html() {
-    const group = storage.getGroup();
     return `{{app-navigation.html}}`;
   }
   /* eslint-enable no-unused-vars */
+
+  get displayName() {
+    const session = storage.getSession();
+    if (session && session.username) return session.username;
+    const group = storage.getGroup();
+    if (group && group.groupName) return group.groupName;
+    return "Group";
+  }
+
+  get isAdmin() {
+    const session = storage.getSession();
+    return session && session.role === "admin";
+  }
 
   connectedCallback() {
     super.connectedCallback();

@@ -51,7 +51,9 @@ export class MapPage extends BaseElement {
   handleUpdatedMembers(members) {
     let playerButtons = "";
     for (const member of members) {
-      playerButtons += `<button type="button" class="men-button" player-name="${member.name}">${member.name}</button>`;
+      if (!member.inactive) {
+        playerButtons += `<button type="button" class="men-button" player-name="${member.name}">${member.name}</button>`;
+      }
     }
 
     if (this.playerButtons) {

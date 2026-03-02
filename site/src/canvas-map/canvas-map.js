@@ -132,7 +132,9 @@ export class CanvasMap extends BaseElement {
     this.playerMarkers = new Map();
 
     for (const member of members) {
-      this.handleUpdatedCoordinates(member);
+      if (!member.inactive) {
+        this.handleUpdatedCoordinates(member);
+      }
     }
   }
 
@@ -141,6 +143,11 @@ export class CanvasMap extends BaseElement {
   }
 
   handleUpdatedCoordinates(member) {
+    if (member.inactive) {
+      this.playerMarkers.delete(member.name);
+      this.requestUpdate();
+      return;
+    }
     const coordinates = member.coordinates || {};
     if (this.isValidCoordinates(coordinates)) {
       this.playerMarkers.set(member.name, {

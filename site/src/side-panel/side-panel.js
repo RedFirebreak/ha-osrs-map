@@ -23,7 +23,9 @@ export class SidePanel extends BaseElement {
   handleUpdatedMembers(members) {
     let playerPanels = "";
     for (const member of members) {
-      playerPanels += `<player-panel class="rsborder rsbackground" player-name="${member.name}"></player-panel>`;
+      if (!member.inactive) {
+        playerPanels += `<player-panel class="rsborder rsbackground" player-name="${member.name}"></player-panel>`;
+      }
     }
 
     this.sidePanels.innerHTML = playerPanels;

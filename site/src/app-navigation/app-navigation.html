@@ -1,4 +1,4 @@
-<h4 class="app-navigation__group-name">${group.groupName}</h4>
+<h4 class="app-navigation__group-name">${this.displayName}</h4>
 <nav class="app-navigation__nav">
   <men-link link-href="/group/items">
     <button class="men-button" type="button" route-component="items-page">
@@ -30,6 +30,15 @@
       <span class="mobile"><img loading="lazy" src="/ui/785-0.png" /></span>
     </button>
   </men-link>
+
+  ${this.isAdmin ? `
+  <men-link link-href="/group/admin">
+    <button class="men-button" type="button" route-component="admin-portal">
+      <span class="desktop">Admin</span>
+      <span class="mobile"><img loading="lazy" src="/ui/785-0.png" /></span>
+    </button>
+  </men-link>
+  ` : ''}
 
   <div class="app-navigation__separator desktop"></div>
   <men-link link-href="/setup-instructions">

@@ -20,6 +20,8 @@ export class MenHomepage extends BaseElement {
   }
 
   get hasLogin() {
+    const session = storage.getSession();
+    if (session && session.sessionToken) return true;
     const group = storage.getGroup();
     return group && group.groupName && group.groupToken && group.groupName !== "@EXAMPLE";
   }

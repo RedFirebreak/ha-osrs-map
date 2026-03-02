@@ -21,6 +21,7 @@ export class GroupData {
 
     let updatedAttributes = new Set();
     let lastUpdated = new Date(0);
+    let inactiveStatusChanged = false;
     for (const memberData of groupData) {
       const memberName = memberData.name;
       removedMembers.delete(memberName);
@@ -29,7 +30,11 @@ export class GroupData {
       }
 
       const member = this.members.get(memberName);
+      const wasInactive = member.inactive;
       member.update(memberData).forEach((attribute) => updatedAttributes.add(attribute));
+      if (wasInactive !== member.inactive) {
+        inactiveStatusChanged = true;
+      }
 
       if (member.lastUpdated && member.lastUpdated > lastUpdated) {
         lastUpdated = member.lastUpdated;
@@ -107,7 +112,7 @@ export class GroupData {
     const [lastMemberListPublished] = pubsub.getMostRecent("members-updated") || [];
     const previousNames = lastMemberListPublished?.map((x) => x.name);
     const currentNames = [...this.members.values()].map((x) => x.name);
-    const membersUpdated = !utility.setsEqual(new Set(currentNames), new Set(previousNames));
+    const membersUpdated = !utility.setsEqual(new Set(currentNames), new Set(previousNames)) || inactiveStatusChanged;
     if (membersUpdated) {
       pubsub.publish("members-updated", [...this.members.values()]);
     }

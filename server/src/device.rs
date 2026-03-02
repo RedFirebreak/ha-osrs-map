@@ -1,7 +1,7 @@
 use crate::crypto::token_hash;
 use crate::db;
 use crate::error::ApiError;
-use crate::auth_middleware::Authenticated;
+use crate::auth_middleware::{Authenticated, SessionAuthenticated};
 use crate::models::{
     GroupMember, IngestPayload, PairCodeResponse, PairRequest, PairResponse,
 };
@@ -32,6 +32,36 @@ fn generate_pairing_code() -> String {
 
 #[post("/pair/code")]
 pub async fn create_pairing_code(
+    session: SessionAuthenticated,
+    db_pool: web::Data<Pool>,
+) -> Result<HttpResponse, Error> {
+    let client: Client = db_pool.get().await.map_err(ApiError::PoolError)?;
+
+    // Clean up expired codes
+    let _ = db::cleanup_expired_pairing_codes(&client).await;
+
+    let code = generate_pairing_code();
+    let expires_at = Utc::now() + Duration::seconds(300);
+
+    db::store_pairing_code_for_user(
+        &client,
+        &code,
+        session.group_id,
+        session.user.user_id,
+        &expires_at,
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().json(PairCodeResponse {
+        ok: true,
+        code,
+        expires_in: 300,
+    }))
+}
+
+// Legacy pairing code endpoint (for backward compatibility with group token auth)
+#[post("/legacy-pair/code")]
+pub async fn create_pairing_code_legacy(
     auth: Authenticated,
     db_pool: web::Data<Pool>,
 ) -> Result<HttpResponse, Error> {
@@ -59,13 +89,13 @@ pub async fn pair_device(
 ) -> Result<HttpResponse, Error> {
     let client: Client = db_pool.get().await.map_err(ApiError::PoolError)?;
 
-    let group_id = db::consume_pairing_code(&client, &body.code).await?;
+    let (group_id, user_id) = db::consume_pairing_code_with_user(&client, &body.code).await?;
 
     let device_id = uuid::Uuid::new_v4().hyphenated().to_string();
     let raw_token = uuid::Uuid::new_v4().hyphenated().to_string();
     let hashed_token = token_hash(&raw_token, DEVICE_TOKEN_SALT);
 
-    db::store_device(&client, &device_id, group_id, &hashed_token).await?;
+    db::store_device_for_user(&client, &device_id, group_id, user_id, &hashed_token).await?;
 
     Ok(HttpResponse::Ok().json(PairResponse {
         ok: true,
@@ -232,6 +262,11 @@ pub async fn ingest(
     }
 
     db::ensure_member_exists(&client, group_id, player_name).await?;
+
+    // Track user-player link
+    if let Ok(Some(user_id)) = db::get_device_user_id(&client, &hashed_token).await {
+        let _ = db::upsert_user_player_link(&client, user_id, player_name, group_id).await;
+    }
 
     let group_member = convert_ingest_to_group_member(&body, group_id);
 

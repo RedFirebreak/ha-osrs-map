@@ -40,15 +40,22 @@ export class AppInitializer extends BaseElement {
     this.cleanup();
     loadingScreenManager.showLoadingScreen();
     await Promise.all([Item.loadItems(), Item.loadGePrices(), Quest.loadQuests(), AchievementDiary.loadDiaries()]);
+
+    // Check for session-based auth first, then legacy
+    const session = storage.getSession();
     const group = storage.getGroup();
 
-    // Make sure this component is still connected after loading the above. We don't want to start
-    // making requests for group data if the user navigated away before the preload completed.
+    // Make sure this component is still connected after loading the above.
     if (this.isConnected) {
       if (group.groupName === "@EXAMPLE") {
         await this.loadExampleData();
-      } else {
+      } else if (session.sessionToken) {
+        await this.loadWithSession(session);
+      } else if (group.groupName && group.groupToken) {
         await this.loadGroup(group);
+      } else {
+        // No credentials, redirect to login
+        window.history.pushState("", "", "/login");
       }
 
       loadingScreenManager.hideLoadingScreen();
@@ -59,6 +66,13 @@ export class AppInitializer extends BaseElement {
     exampleData.enable();
     api.exampleDataEnabled = true;
     await api.enable();
+  }
+
+  async loadWithSession(session) {
+    api.setSession(session.sessionToken, session.username, session.role);
+    const firstDataEvent = pubsub.waitUntilNextEvent("get-group-data", false);
+    await api.enable();
+    await firstDataEvent;
   }
 
   async loadGroup(group) {

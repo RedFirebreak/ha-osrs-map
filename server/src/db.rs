@@ -1,13 +1,14 @@
 use crate::crypto::token_hash;
 use crate::error::ApiError;
 use crate::models::{
-    AggregateSkillData, CreateGroup, GroupMember, GroupSkillData, MemberSkillData,
+    AggregateSkillData, AuditLogEntry, CreateGroup, GroupMember, GroupSkillData,
+    MemberSkillData, PlayerInfo, SessionUser, UserInfo,
 };
 use chrono::{DateTime, Utc};
 use deadpool_postgres::{Client, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::{HashMap, HashSet};
-use tokio_postgres::Row;
+use tokio_postgres::{error::SqlState, Row};
 
 const CURRENT_GROUP_VERSION: i32 = 2;
 pub async fn create_group(client: &mut Client, create_group: &CreateGroup) -> Result<(), ApiError> {
@@ -82,15 +83,29 @@ pub async fn delete_collection_log_data_for_member(
     transaction: &Transaction<'_>,
     member_id: i64,
 ) -> Result<(), ApiError> {
-    let a = "DELETE FROM groupironman.collection_log WHERE member_id=$1";
-    let delete_collection_stmt = transaction.prepare_cached(&a).await?;
-    transaction
-        .execute(&delete_collection_stmt, &[&member_id])
-        .await?;
+    let delete_queries = [
+        "DELETE FROM groupironman.collection_log WHERE member_id=$1",
+        "DELETE FROM groupironman.collection_log_new WHERE member_id=$1",
+    ];
 
-    let b = "DELETE FROM groupironman.collection_log_new WHERE member_id=$1";
-    let delete_new_stmt = transaction.prepare_cached(&b).await?;
-    transaction.execute(&delete_new_stmt, &[&member_id]).await?;
+    for (idx, query) in delete_queries.iter().enumerate() {
+        let savepoint = format!("sp_collection_log_{}", idx);
+        transaction.execute(&format!("SAVEPOINT {}", savepoint), &[]).await?;
+        
+        match transaction.execute(*query, &[&member_id]).await {
+            Ok(_) => {
+                transaction.execute(&format!("RELEASE SAVEPOINT {}", savepoint), &[]).await?;
+            }
+            Err(err) if err.code() == Some(&SqlState::UNDEFINED_TABLE) => {
+                log::debug!("Skipping collection-log cleanup for missing table: {}", query);
+                transaction.execute(&format!("ROLLBACK TO SAVEPOINT {}", savepoint), &[]).await?;
+            }
+            Err(err) => {
+                transaction.execute(&format!("ROLLBACK TO SAVEPOINT {}", savepoint), &[]).await?;
+                return Err(err.into());
+            }
+        }
+    }
 
     Ok(())
 }
@@ -554,6 +569,35 @@ pub async fn ensure_member_exists(
     Ok(())
 }
 
+pub async fn list_players(
+    client: &Client,
+    group_id: i64,
+) -> Result<Vec<PlayerInfo>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+SELECT member_id, member_name,
+GREATEST(stats_last_update, coordinates_last_update, skills_last_update,
+quests_last_update, inventory_last_update, equipment_last_update, bank_last_update,
+rune_pouch_last_update, interacting_last_update, seed_vault_last_update, diary_vars_last_update,
+collection_log_last_update) as last_updated
+FROM groupironman.members WHERE group_id=$1
+ORDER BY member_name
+"#,
+        )
+        .await?;
+    let rows = client.query(&stmt, &[&group_id]).await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(PlayerInfo {
+            member_id: row.try_get("member_id")?,
+            member_name: row.try_get("member_name")?,
+            last_updated: row.try_get("last_updated").ok(),
+        });
+    }
+    Ok(result)
+}
+
 pub async fn update_schema(client: &mut Client) -> Result<(), ApiError> {
     client
         .execute(
@@ -943,5 +987,525 @@ CREATE TABLE IF NOT EXISTS groupironman.devices (
         transaction.commit().await?;
     }
 
+    if !has_migration_run(client, "add_user_management_tables").await? {
+        let transaction = client.transaction().await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.users (
+    user_id BIGSERIAL PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen TIMESTAMPTZ
+)
+"#,
+                &[],
+            )
+            .await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES groupironman.users(user_id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL
+)
+"#,
+                &[],
+            )
+            .await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.audit_log (
+    log_id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES groupironman.users(user_id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    target_user_id BIGINT REFERENCES groupironman.users(user_id) ON DELETE SET NULL,
+    details TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+"#,
+                &[],
+            )
+            .await?;
+        // Add user_id to pairing_codes and devices if not already present
+        transaction
+            .execute(
+                "ALTER TABLE groupironman.pairing_codes ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES groupironman.users(user_id) ON DELETE CASCADE",
+                &[],
+            )
+            .await?;
+        transaction
+            .execute(
+                "ALTER TABLE groupironman.devices ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES groupironman.users(user_id) ON DELETE CASCADE",
+                &[],
+            )
+            .await?;
+        commit_migration(&transaction, "add_user_management_tables").await?;
+        transaction.commit().await?;
+    }
+
+    if !has_migration_run(client, "add_user_player_links_table").await? {
+        let transaction = client.transaction().await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.user_player_links (
+    user_id BIGINT NOT NULL REFERENCES groupironman.users(user_id) ON DELETE CASCADE,
+    member_name CITEXT NOT NULL,
+    group_id BIGINT NOT NULL REFERENCES groupironman.groups(group_id),
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, member_name, group_id)
+)
+"#,
+                &[],
+            )
+            .await?;
+        commit_migration(&transaction, "add_user_player_links_table").await?;
+        transaction.commit().await?;
+    }
+
     Ok(())
+}
+
+// ===================== User Management Functions =====================
+
+pub async fn user_count(client: &Client) -> Result<i64, ApiError> {
+    let stmt = client
+        .prepare_cached("SELECT COUNT(*) FROM groupironman.users")
+        .await?;
+    let row = client.query_one(&stmt, &[]).await?;
+    Ok(row.try_get(0)?)
+}
+
+pub async fn create_user(
+    client: &Client,
+    username: &str,
+    password_hash: &str,
+    role: &str,
+) -> Result<i64, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.users (username, password_hash, role) VALUES($1, $2, $3) RETURNING user_id",
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&username, &password_hash, &role])
+        .await
+        .map_err(|_| ApiError::BadRequest("Username already exists".to_string()))?;
+    Ok(row.try_get(0)?)
+}
+
+pub async fn get_user_by_username(
+    client: &Client,
+    username: &str,
+) -> Result<(i64, String, String, bool), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "SELECT user_id, password_hash, role, enabled FROM groupironman.users WHERE username=$1",
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&username])
+        .await
+        .map_err(|_| ApiError::Unauthorized)?;
+    Ok((
+        row.try_get(0)?,
+        row.try_get(1)?,
+        row.try_get(2)?,
+        row.try_get(3)?,
+    ))
+}
+
+pub async fn get_user_by_id(
+    client: &Client,
+    user_id: i64,
+) -> Result<UserInfo, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "SELECT user_id, username, role, enabled, created_at, last_seen FROM groupironman.users WHERE user_id=$1",
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&user_id])
+        .await
+        .map_err(|_| ApiError::BadRequest("User not found".to_string()))?;
+    Ok(UserInfo {
+        user_id: row.try_get(0)?,
+        username: row.try_get(1)?,
+        role: row.try_get(2)?,
+        enabled: row.try_get(3)?,
+        created_at: row.try_get(4)?,
+        last_seen: row.try_get(5).ok(),
+    })
+}
+
+pub async fn list_users(client: &Client) -> Result<Vec<UserInfo>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "SELECT user_id, username, role, enabled, created_at, last_seen FROM groupironman.users ORDER BY user_id",
+        )
+        .await?;
+    let rows = client.query(&stmt, &[]).await?;
+    let mut users = Vec::with_capacity(rows.len());
+    for row in rows {
+        users.push(UserInfo {
+            user_id: row.try_get(0)?,
+            username: row.try_get(1)?,
+            role: row.try_get(2)?,
+            enabled: row.try_get(3)?,
+            created_at: row.try_get(4)?,
+            last_seen: row.try_get(5).ok(),
+        });
+    }
+    Ok(users)
+}
+
+pub async fn update_user_role(
+    client: &Client,
+    user_id: i64,
+    role: &str,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("UPDATE groupironman.users SET role=$1 WHERE user_id=$2")
+        .await?;
+    client.execute(&stmt, &[&role, &user_id]).await?;
+    Ok(())
+}
+
+pub async fn update_user_enabled(
+    client: &Client,
+    user_id: i64,
+    enabled: bool,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("UPDATE groupironman.users SET enabled=$1 WHERE user_id=$2")
+        .await?;
+    client.execute(&stmt, &[&enabled, &user_id]).await?;
+    Ok(())
+}
+
+pub async fn update_user_password(
+    client: &Client,
+    user_id: i64,
+    password_hash: &str,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("UPDATE groupironman.users SET password_hash=$1 WHERE user_id=$2")
+        .await?;
+    client.execute(&stmt, &[&password_hash, &user_id]).await?;
+    Ok(())
+}
+
+pub async fn update_user_last_seen(
+    client: &Client,
+    user_id: i64,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("UPDATE groupironman.users SET last_seen=NOW() WHERE user_id=$1")
+        .await?;
+    client.execute(&stmt, &[&user_id]).await?;
+    Ok(())
+}
+
+pub async fn delete_user(client: &Client, user_id: i64) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("DELETE FROM groupironman.users WHERE user_id=$1")
+        .await?;
+    client.execute(&stmt, &[&user_id]).await?;
+    Ok(())
+}
+
+// Session management
+
+pub async fn create_session(
+    client: &Client,
+    session_id: &str,
+    user_id: i64,
+    expires_at: &DateTime<Utc>,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.sessions (session_id, user_id, expires_at) VALUES($1, $2, $3)",
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&session_id, &user_id, &expires_at])
+        .await?;
+    Ok(())
+}
+
+pub async fn get_session_user(
+    client: &Client,
+    session_id: &str,
+) -> Result<SessionUser, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+SELECT u.user_id, u.username, u.role, u.enabled
+FROM groupironman.sessions s
+JOIN groupironman.users u ON s.user_id = u.user_id
+WHERE s.session_id=$1 AND s.expires_at > NOW() AND u.enabled = TRUE
+"#,
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&session_id])
+        .await
+        .map_err(|_| ApiError::Unauthorized)?;
+    Ok(SessionUser {
+        user_id: row.try_get(0)?,
+        username: row.try_get(1)?,
+        role: row.try_get(2)?,
+        enabled: row.try_get(3)?,
+    })
+}
+
+pub async fn delete_session(client: &Client, session_id: &str) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("DELETE FROM groupironman.sessions WHERE session_id=$1")
+        .await?;
+    client.execute(&stmt, &[&session_id]).await?;
+    Ok(())
+}
+
+pub async fn delete_user_sessions(client: &Client, user_id: i64) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("DELETE FROM groupironman.sessions WHERE user_id=$1")
+        .await?;
+    client.execute(&stmt, &[&user_id]).await?;
+    Ok(())
+}
+
+pub async fn cleanup_expired_sessions(client: &Client) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("DELETE FROM groupironman.sessions WHERE expires_at <= NOW()")
+        .await?;
+    client.execute(&stmt, &[]).await?;
+    Ok(())
+}
+
+// Audit log
+
+pub async fn write_audit_log(
+    client: &Client,
+    user_id: Option<i64>,
+    action: &str,
+    target_user_id: Option<i64>,
+    details: Option<&str>,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.audit_log (user_id, action, target_user_id, details) VALUES($1, $2, $3, $4)",
+        )
+        .await?;
+    let user_id_ref: Option<&i64> = user_id.as_ref();
+    let target_ref: Option<&i64> = target_user_id.as_ref();
+    client
+        .execute(&stmt, &[&user_id_ref, &action, &target_ref, &details])
+        .await?;
+    Ok(())
+}
+
+pub async fn get_audit_log(
+    client: &Client,
+    limit: i64,
+) -> Result<Vec<AuditLogEntry>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "SELECT log_id, user_id, action, target_user_id, details, created_at FROM groupironman.audit_log ORDER BY created_at DESC LIMIT $1",
+        )
+        .await?;
+    let rows = client.query(&stmt, &[&limit]).await?;
+    let mut entries = Vec::with_capacity(rows.len());
+    for row in rows {
+        entries.push(AuditLogEntry {
+            log_id: row.try_get(0)?,
+            user_id: row.try_get(1).ok(),
+            action: row.try_get(2)?,
+            target_user_id: row.try_get(3).ok(),
+            details: row.try_get(4).ok(),
+            created_at: row.try_get(5)?,
+        });
+    }
+    Ok(entries)
+}
+
+// Per-user pairing code management
+
+pub async fn store_pairing_code_for_user(
+    client: &Client,
+    code: &str,
+    group_id: i64,
+    user_id: i64,
+    expires_at: &DateTime<Utc>,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.pairing_codes (code, group_id, user_id, expires_at) VALUES($1, $2, $3, $4)",
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&code, &group_id, &user_id, &expires_at])
+        .await?;
+    Ok(())
+}
+
+pub async fn consume_pairing_code_with_user(
+    client: &Client,
+    code: &str,
+) -> Result<(i64, Option<i64>), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "DELETE FROM groupironman.pairing_codes WHERE code=$1 AND expires_at > NOW() RETURNING group_id, user_id",
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&code])
+        .await
+        .map_err(ApiError::PairingCodeError)?;
+    let group_id: i64 = row.try_get(0)?;
+    let user_id: Option<i64> = row.try_get(1).ok();
+    Ok((group_id, user_id))
+}
+
+pub async fn store_device_for_user(
+    client: &Client,
+    device_id: &str,
+    group_id: i64,
+    user_id: Option<i64>,
+    token_hash: &str,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.devices (device_id, group_id, user_id, token_hash) VALUES($1, $2, $3, $4)",
+        )
+        .await?;
+    let user_id_ref: Option<&i64> = user_id.as_ref();
+    client
+        .execute(&stmt, &[&device_id, &group_id, &user_id_ref, &token_hash])
+        .await?;
+    Ok(())
+}
+
+pub async fn revoke_user_devices(client: &Client, user_id: i64) -> Result<u64, ApiError> {
+    let stmt = client
+        .prepare_cached("DELETE FROM groupironman.devices WHERE user_id=$1")
+        .await?;
+    let count = client.execute(&stmt, &[&user_id]).await?;
+    Ok(count)
+}
+
+pub async fn revoke_user_pairing_codes(client: &Client, user_id: i64) -> Result<u64, ApiError> {
+    let stmt = client
+        .prepare_cached("DELETE FROM groupironman.pairing_codes WHERE user_id=$1")
+        .await?;
+    let count = client.execute(&stmt, &[&user_id]).await?;
+    Ok(count)
+}
+
+// Singleton group: get or create the single group for this instance
+pub async fn get_or_create_singleton_group(client: &mut Client) -> Result<i64, ApiError> {
+    // Try to find the first group
+    let stmt = client
+        .prepare_cached("SELECT group_id FROM groupironman.groups ORDER BY group_id LIMIT 1")
+        .await?;
+    let row = client.query_opt(&stmt, &[]).await?;
+    if let Some(row) = row {
+        return Ok(row.try_get(0)?);
+    }
+    // Create a singleton group
+    let create_stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.groups (group_name, group_token_hash) VALUES($1, $2) RETURNING group_id",
+        )
+        .await?;
+    let placeholder_hash = token_hash("singleton", "singleton");
+    let row = client
+        .query_one(&create_stmt, &[&"clan", &placeholder_hash])
+        .await?;
+    Ok(row.try_get(0)?)
+}
+
+// User-player link tracking
+
+pub async fn get_device_user_id(
+    client: &Client,
+    token_hash: &str,
+) -> Result<Option<i64>, ApiError> {
+    let stmt = client
+        .prepare_cached("SELECT user_id FROM groupironman.devices WHERE token_hash=$1")
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&token_hash])
+        .await
+        .map_err(ApiError::DeviceAuthError)?;
+    Ok(row.try_get::<_, Option<i64>>(0)?)
+}
+
+pub async fn upsert_user_player_link(
+    client: &Client,
+    user_id: i64,
+    member_name: &str,
+    group_id: i64,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+INSERT INTO groupironman.user_player_links (user_id, member_name, group_id, last_updated)
+VALUES($1, $2, $3, NOW())
+ON CONFLICT (user_id, member_name, group_id) DO UPDATE SET last_updated = NOW()
+"#,
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&user_id, &member_name, &group_id])
+        .await?;
+    Ok(())
+}
+
+pub async fn get_players_for_user(
+    client: &Client,
+    user_id: i64,
+    group_id: i64,
+) -> Result<Vec<String>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "SELECT member_name FROM groupironman.user_player_links WHERE user_id=$1 AND group_id=$2 ORDER BY member_name",
+        )
+        .await?;
+    let rows = client.query(&stmt, &[&user_id, &group_id]).await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(row.try_get(0)?);
+    }
+    Ok(result)
+}
+
+pub async fn get_users_for_player(
+    client: &Client,
+    member_name: &str,
+    group_id: i64,
+) -> Result<Vec<String>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+SELECT u.username FROM groupironman.user_player_links l
+JOIN groupironman.users u ON l.user_id = u.user_id
+WHERE l.member_name=$1 AND l.group_id=$2
+ORDER BY u.username
+"#,
+        )
+        .await?;
+    let rows = client.query(&stmt, &[&member_name, &group_id]).await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(row.try_get(0)?);
+    }
+    Ok(result)
 }

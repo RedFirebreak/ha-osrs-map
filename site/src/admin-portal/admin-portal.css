@@ -1,0 +1,174 @@
+.admin-portal__container {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  height: calc(100vh - 100px);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.admin-portal__column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+
+.admin-portal__column h3 {
+  margin: 0 0 0.5rem 0;
+  flex-shrink: 0;
+  font-size: 1.3rem;
+}
+
+.admin-portal__scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.admin-portal__section {
+  margin-bottom: 1.5rem;
+}
+
+.admin-portal__user-list {
+  margin-top: 0.75rem;
+}
+
+.admin-portal__user-row {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  gap: 0.35rem;
+}
+
+.admin-portal__user-info {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 1rem;
+}
+
+.admin-portal__user-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.admin-portal__badge {
+  font-size: 0.85rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  font-weight: bold;
+}
+
+.admin-portal__badge--admin {
+  background: #d4a017;
+  color: #000;
+}
+
+.admin-portal__badge--member {
+  background: #3a7d44;
+  color: #fff;
+}
+
+.admin-portal__badge--disabled {
+  background: #8b0000;
+  color: #fff;
+}
+
+.admin-portal__badge--stale {
+  background: #8b0000;
+  color: #fff;
+}
+
+.admin-portal__badge--time {
+  background: rgba(255,255,255,0.1);
+  color: #999;
+  cursor: default;
+  font-weight: normal;
+  font-size: 0.8rem;
+}
+
+.admin-portal__create-user {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-portal__create-user h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+}
+
+.admin-portal__role-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+
+.admin-portal__role-select select {
+  padding: 0.3rem;
+  font-size: 1rem;
+}
+
+.admin-portal__audit-log {
+  font-size: 0.95rem;
+}
+
+.admin-portal__audit-entry {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.admin-portal__audit-time {
+  color: #999;
+  margin-right: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.admin-portal__player-list {
+  margin-bottom: 0;
+}
+
+.admin-portal__player-row {
+  display: flex;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  gap: 0.5rem;
+}
+
+.admin-portal__player-name {
+  font-weight: bold;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.admin-portal__player-spacer {
+  flex: 1;
+}
+
+.admin-portal__player-actions {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.admin-portal__linked-list {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  color: #ccc;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.03);
+}
+
+.admin-portal__linked-list strong {
+  color: #fff;
+}
