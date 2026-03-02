@@ -17,10 +17,8 @@ export class GroupSettings extends BaseElement {
   connectedCallback() {
     super.connectedCallback();
     this.render();
-    this.memberSection = this.querySelector(".group-settings__members");
     this.panelDockSide = this.querySelector(".group-settings__panels");
     this.appearanceStyle = this.querySelector(".group-settings__style");
-    this.subscribe("members-updated", this.handleUpdatedMembers.bind(this));
     this.eventListener(this.panelDockSide, "change", this.handlePanelDockSideChange.bind(this));
     this.eventListener(this.appearanceStyle, "change", this.handleStyleChange.bind(this));
   }
@@ -42,25 +40,6 @@ export class GroupSettings extends BaseElement {
     } else {
       appearance.setLayout("row");
     }
-  }
-
-  handleUpdatedMembers(members) {
-    let memberEdits = document.createDocumentFragment();
-    for (let i = 0; i < members.length; ++i) {
-      const member = members[i];
-      const memberEdit = document.createElement("edit-member");
-      memberEdit.member = member;
-      memberEdit.memberNumber = i + 1;
-
-      memberEdits.appendChild(memberEdit);
-    }
-
-    const addMember = document.createElement("edit-member");
-    addMember.memberNumber = members.length + 1;
-    memberEdits.appendChild(addMember);
-
-    this.memberSection.innerHTML = "";
-    this.memberSection.appendChild(memberEdits);
   }
 }
 
