@@ -2,6 +2,12 @@ import { BaseElement } from "../base-element/base-element";
 import { api } from "../data/api";
 import { storage } from "../data/storage";
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 export class AdminPortal extends BaseElement {
   constructor() {
     super();
@@ -109,10 +115,10 @@ export class AdminPortal extends BaseElement {
         return `
           <div class="admin-portal__user-row">
             <div class="admin-portal__user-info">
-              <strong>${user.username}</strong>
+              <strong>${escapeHtml(user.username)}</strong>
               ${roleBadge}
               ${disabledBadge}
-              <span style="font-size:0.8rem;color:#999">Last seen: ${lastSeen}</span>
+              <span style="font-size:0.8rem;color:#999">Last seen: ${escapeHtml(lastSeen)}</span>
             </div>
             <div class="admin-portal__user-actions">${actions}</div>
           </div>
@@ -185,8 +191,8 @@ export class AdminPortal extends BaseElement {
         const details = entry.details || entry.action;
         return `
           <div class="admin-portal__audit-entry">
-            <span class="admin-portal__audit-time">${time}</span>
-            <span>${details}</span>
+            <span class="admin-portal__audit-time">${escapeHtml(time)}</span>
+            <span>${escapeHtml(details)}</span>
           </div>
         `;
       })
