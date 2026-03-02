@@ -11,11 +11,14 @@ use chrono::{Duration, Utc};
 use deadpool_postgres::{Client, Pool};
 use tokio::sync::mpsc;
 
+// Must match the iteration order of SkillName in site/src/data/skill.js
+// (Object.keys order, excluding Overall)
 const SKILL_ORDER: &[&str] = &[
-    "Attack", "Defence", "Strength", "Hitpoints", "Ranged", "Prayer",
-    "Magic", "Cooking", "Woodcutting", "Fletching", "Fishing", "Firemaking",
-    "Crafting", "Smithing", "Mining", "Herblore", "Agility", "Thieving",
-    "Slayer", "Farming", "Runecraft", "Hunter", "Construction",
+    "Agility", "Attack", "Construction", "Cooking", "Crafting", "Defence",
+    "Farming", "Firemaking", "Fishing", "Fletching", "Herblore", "Hitpoints",
+    "Hunter", "Magic", "Mining",
+    "Prayer", "Ranged", "Runecraft", "Slayer", "Smithing", "Strength",
+    "Thieving", "Woodcutting", "Sailing",
 ];
 
 const DEVICE_TOKEN_SALT: &str = "osrs-device";
@@ -76,15 +79,28 @@ fn convert_ingest_to_group_member(payload: &IngestPayload, group_id: i64) -> Gro
 
     let coordinates = player.location.as_ref().map(|loc| vec![loc.x, loc.y, loc.plane]);
 
-    let stats = match (&player.health, &player.prayer_points) {
-        (Some(health), Some(prayer)) => Some(vec![
-            health.current, health.max,
-            0,
-            prayer.current, prayer.max,
-            0, 0,
-        ]),
-        (Some(health), None) => Some(vec![health.current, health.max, 0, 0, 0, 0, 0]),
-        _ => None,
+    let world: i32 = player.world.as_ref()
+        .and_then(|w| w.parse().ok())
+        .unwrap_or(0);
+
+    // Stats array layout expected by frontend (see transformStatsFromStorage):
+    // [0] hitpoints.current, [1] hitpoints.max,
+    // [2] prayer.current, [3] prayer.max,
+    // [4] energy.current, [5] (unused), [6] world
+    let stats = {
+        let hp = player.health.as_ref();
+        let pr = player.prayer_points.as_ref();
+        if hp.is_some() || pr.is_some() || world != 0 {
+            Some(vec![
+                hp.map(|h| h.current).unwrap_or(0),
+                hp.map(|h| h.max).unwrap_or(0),
+                pr.map(|p| p.current).unwrap_or(0),
+                pr.map(|p| p.max).unwrap_or(0),
+                0, 0, world,
+            ])
+        } else {
+            None
+        }
     };
 
     let skills = player.stats.as_ref().and_then(|stats| {
@@ -103,13 +119,23 @@ fn convert_ingest_to_group_member(payload: &IngestPayload, group_id: i64) -> Gro
 
     let inventory = player.inventory.as_ref().and_then(|inv| {
         inv.items.as_ref().map(|items| {
-            let mut flat = Vec::with_capacity(56);
-            for item in items.iter().take(28) {
-                flat.push(item.id.unwrap_or(0));
-                flat.push(item.quantity.unwrap_or(0));
-            }
-            while flat.len() < 56 {
-                flat.push(0);
+            let mut flat = vec![0i32; 56]; // 28 slots × 2
+            let has_slots = items.iter().any(|item| item.slot.is_some());
+
+            if has_slots {
+                for item in items {
+                    if let Some(slot) = item.slot {
+                        if slot < 28 {
+                            flat[slot * 2] = item.id.unwrap_or(0);
+                            flat[slot * 2 + 1] = item.quantity.unwrap_or(0);
+                        }
+                    }
+                }
+            } else {
+                for (i, item) in items.iter().take(28).enumerate() {
+                    flat[i * 2] = item.id.unwrap_or(0);
+                    flat[i * 2 + 1] = item.quantity.unwrap_or(0);
+                }
             }
             flat
         })
@@ -117,13 +143,23 @@ fn convert_ingest_to_group_member(payload: &IngestPayload, group_id: i64) -> Gro
 
     let equipment = player.equipment.as_ref().and_then(|eq| {
         eq.items.as_ref().map(|items| {
-            let mut flat = Vec::with_capacity(28);
-            for item in items.iter().take(14) {
-                flat.push(item.id.unwrap_or(0));
-                flat.push(item.quantity.unwrap_or(0));
-            }
-            while flat.len() < 28 {
-                flat.push(0);
+            let mut flat = vec![0i32; 28]; // 14 slots × 2
+            let has_slots = items.iter().any(|item| item.slot.is_some());
+
+            if has_slots {
+                for item in items {
+                    if let Some(slot) = item.slot {
+                        if slot < 14 {
+                            flat[slot * 2] = item.id.unwrap_or(0);
+                            flat[slot * 2 + 1] = item.quantity.unwrap_or(0);
+                        }
+                    }
+                }
+            } else {
+                for (i, item) in items.iter().take(14).enumerate() {
+                    flat[i * 2] = item.id.unwrap_or(0);
+                    flat[i * 2 + 1] = item.quantity.unwrap_or(0);
+                }
             }
             flat
         })

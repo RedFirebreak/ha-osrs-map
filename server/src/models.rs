@@ -173,6 +173,8 @@ pub struct IngestStats {
 pub struct IngestItem {
     pub id: Option<i32>,
     pub quantity: Option<i32>,
+    #[serde(default)]
+    pub slot: Option<usize>,
 }
 
 #[derive(Deserialize)]
