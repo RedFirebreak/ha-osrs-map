@@ -23,9 +23,6 @@ export class SidePanel extends BaseElement {
   handleUpdatedMembers(members) {
     let playerPanels = "";
     for (const member of members) {
-      if (member.name === "@SHARED") {
-        continue;
-      }
       playerPanels += `<player-panel class="rsborder rsbackground" player-name="${member.name}"></player-panel>`;
     }
 

@@ -1,17 +1,29 @@
-# Group Ironmen Tracker Frontend and Backend
-Website: [groupiron.men](https://groupiron.men)
+# OSRS Group Tracker Frontend and Backend
 
-Source for plugin: [https://github.com/christoabrown/group-ironmen-tracker](https://github.com/christoabrown/group-ironmen-tracker)
+This repo is for the frontend website and backend for tracking OSRS players in a group.
 
-This repo is for the frontend website and backend of the above plugin.
+This application tracks information about your OSRS players and sends it to a server where you and your group members can view it. Currently it tracks:
 
-This plugin tracks information about your group ironman player and sends it to a server where you and your other group members can view it. Currently it tracks:
-
-* Inventory, equipment, bank, rune pouch, and shared bank
+* Inventory, equipment, and bank
 * Skill XP
 * World position, viewable in an interactive map
 * HP, prayer, energy, and world as well as showing inactivity
 * Quest state - completed, finished, in progress
+
+## Features
+
+* **Device Pairing** — Use a 5-digit pairing code to link RuneLite clients to your group
+* **Auto-add Members** — New players are automatically added to the group on first data ingestion
+* **Token Auth** — Paired devices use hashed tokens for secure data submission
+* **Generic JSON Ingestion** — Accepts standard RuneLite plugin JSON payloads (not limited to Group Ironman)
+
+## Setup Flow
+
+1. **Create a group** via the website (pick a group name, get a group token)
+2. **Generate a pairing code**: `POST /api/group/{group_name}/pair/code` (requires group token in `Authorization` header)
+3. **Pair a device**: `POST /api/osrs-data/pair` with `{ "code": "12345" }` — returns a device token
+4. **Ingest data**: `POST /api/osrs-data/events` with `X-Osrs-Token` header containing the device token
+5. Players are auto-added to the group on first successful ingestion
 
 # Self-hosting
 

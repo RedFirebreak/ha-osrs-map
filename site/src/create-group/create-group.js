@@ -89,7 +89,7 @@ export class CreateGroup extends BaseElement {
 
     membersSection.innerHTML = "";
     membersSection.appendChild(memberInputEls);
-    this.querySelector(".create-group__step-members").style.display = "block";
+    this.querySelector(".create-group__step-members").style.display = memberCount > 0 ? "block" : "none";
     this.querySelector(".create-group__submit").style.display = "block";
   }
 
@@ -122,10 +122,6 @@ export class CreateGroup extends BaseElement {
     const memberNames = [];
     for (const input of memberInputs) {
       memberNames.push(input.value);
-    }
-
-    for (let i = memberNames.length; i < 5; ++i) {
-      memberNames.push("");
     }
 
     const submitBtn = document.querySelector(".create-group__submit");

@@ -139,9 +139,6 @@ class ExampleData {
           },
         },
       },
-      "@SHARED": {
-        bank: [995, 1000000],
-      },
     };
   }
 
@@ -157,7 +154,6 @@ class ExampleData {
         coordinates: this.members["Zezima"].coordinates,
       },
       "Bank alt": {},
-      "@SHARED": {},
     };
     return groupData;
   }

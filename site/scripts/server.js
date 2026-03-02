@@ -43,6 +43,7 @@ if (backend) {
     const headers = Object.assign({}, req.headers);
     delete headers.host;
     delete headers.referer;
+    delete headers['content-length'];
     axios({
       method: req.method,
       url: forwardUrl,
@@ -59,6 +60,7 @@ if (backend) {
         res.set(error.response.headers);
         error.response.data.pipe(res);
       } else if (error.request) {
+        console.error('Proxy error (no response):', error.code, error.message);
         res.status(418).end();
       } else {
         console.error('Error', error.message);

@@ -51,7 +51,6 @@ export class MapPage extends BaseElement {
   handleUpdatedMembers(members) {
     let playerButtons = "";
     for (const member of members) {
-      if (member.name === "@SHARED") continue;
       playerButtons += `<button type="button" class="men-button" player-name="${member.name}">${member.name}</button>`;
     }
 

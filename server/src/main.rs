@@ -8,6 +8,7 @@ mod error;
 mod models;
 mod unauthed;
 mod validators;
+mod device;
 mod update_batcher;
 use crate::auth_middleware::AuthenticateMiddlewareFactory;
 use crate::config::Config;
@@ -47,7 +48,9 @@ async fn main() -> std::io::Result<()> {
             .service(unauthed::create_group)
             .service(unauthed::get_ge_prices)
             .service(unauthed::captcha_enabled)
-            .service(unauthed::collection_log_info);
+            .service(unauthed::collection_log_info)
+            .service(device::pair_device)
+            .service(device::ingest);
         let authed_scope = web::scope("/api/group/{group_name}")
             .wrap(AuthenticateMiddlewareFactory::new())
             .service(authed::update_group_member)
@@ -58,7 +61,8 @@ async fn main() -> std::io::Result<()> {
             .service(authed::am_i_logged_in)
             .service(authed::am_i_in_group)
             .service(authed::get_skill_data)
-            .service(authed::get_collection_log);
+            .service(authed::get_collection_log)
+            .service(device::create_pairing_code);
         let json_config = web::JsonConfig::default().limit(100000);
         let cors = Cors::default()
             .allow_any_origin()
@@ -69,6 +73,7 @@ async fn main() -> std::io::Result<()> {
                 header::ACCEPT,
                 header::CONTENT_TYPE,
                 header::CONTENT_LENGTH,
+                header::HeaderName::from_static("x-osrs-token"),
             ])
             .max_age(3600);
         App::new()

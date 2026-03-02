@@ -45,7 +45,6 @@ export class GroupSettings extends BaseElement {
   }
 
   handleUpdatedMembers(members) {
-    members = members.filter((member) => member.name !== "@SHARED");
     let memberEdits = document.createDocumentFragment();
     for (let i = 0; i < members.length; ++i) {
       const member = members[i];
@@ -56,11 +55,9 @@ export class GroupSettings extends BaseElement {
       memberEdits.appendChild(memberEdit);
     }
 
-    if (members.length < 5) {
-      const addMember = document.createElement("edit-member");
-      addMember.memberNumber = members.length + 1;
-      memberEdits.appendChild(addMember);
-    }
+    const addMember = document.createElement("edit-member");
+    addMember.memberNumber = members.length + 1;
+    memberEdits.appendChild(addMember);
 
     this.memberSection.innerHTML = "";
     this.memberSection.appendChild(memberEdits);

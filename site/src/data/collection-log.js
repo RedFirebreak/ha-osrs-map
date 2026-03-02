@@ -105,7 +105,6 @@ class CollectionLog {
     this.playerLogs = new Map();
 
     for (const member of groupData.members.values()) {
-      if (member.name === "@SHARED") continue;
       this.playerLogs.set(member.name, new PlayerLog(member.name, member.collectionLog));
     }
 

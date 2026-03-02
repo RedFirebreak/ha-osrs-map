@@ -1,4 +1,4 @@
-use crate::models::{GroupMember, SHARED_MEMBER};
+use crate::models::GroupMember;
 use deadpool_postgres::{Pool, Client};
 use std::collections::{HashMap, HashSet};
 use crate::db::serialize_serde;
@@ -278,16 +278,6 @@ async fn process_chunk(pool: &Pool, batch: Arc<Vec<GroupMember>>, start_index: u
             _ => ()
         };
 
-        // update shared bank
-        match (&member_data.shared_bank, member_data.group_id) {
-            (Some(shared_bank), Some(group_id)) => {
-                match update_shared_bank(&client, group_id, shared_bank).await {
-                    Ok(_) => (),
-                    Err(e) => log::error!("Error updating shared bank: {}", e)
-                }
-            },
-            _ => {}
-        };
     }
 }
 
@@ -362,24 +352,4 @@ UPDATE groupironman.members SET bank=$1, bank_last_update=NOW() WHERE group_id=$
     Ok(())
 }
 
-async fn update_shared_bank(
-    client: &Client,
-    group_id: i64,
-    shared_bank: &Vec<i32>,
-) -> Result<(), ApiError> {
-    let stmt = client
-        .prepare_cached(
-            r#"
-UPDATE groupironman.members SET
-bank=$1, bank_last_update=NOW()
-WHERE group_id=$2 AND member_name=$3"#,
-        )
-        .await?;
 
-    client
-        .execute(&stmt, &[&shared_bank, &group_id, &SHARED_MEMBER])
-        .await
-        .map_err(ApiError::UpdateGroupMemberError)?;
-
-    Ok(())
-}

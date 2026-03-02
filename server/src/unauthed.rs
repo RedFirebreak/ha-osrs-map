@@ -20,7 +20,7 @@ lazy_static! {
 pub async fn fetch_latest_prices() -> Result<WikiGEPrices, ApiError> {
     let res = HTTP_CLIENT
         .get("https://prices.runescape.wiki/api/v1/osrs/latest")
-        .header("User-Agent", "Group Ironmen - Dprk#8740")
+        .header("User-Agent", "OSRS Group Tracker")
         .send()
         .await
         .map_err(ApiError::ReqwestError)?;
@@ -158,10 +158,6 @@ pub async fn create_group(
         if !captcha_verify_response.success {
             return Ok(HttpResponse::BadRequest().body("Captcha response verification failed"));
         }
-    }
-
-    if create_group_inner.member_names.len() > 5 {
-        return Ok(HttpResponse::BadRequest().body("Too many member names provided"));
     }
 
     create_group_inner.name = create_group_inner.name.trim().to_string();

@@ -1,7 +1,7 @@
 use crate::crypto::token_hash;
 use crate::error::ApiError;
 use crate::models::{
-    AggregateSkillData, CreateGroup, GroupMember, GroupSkillData, MemberSkillData, SHARED_MEMBER,
+    AggregateSkillData, CreateGroup, GroupMember, GroupSkillData, MemberSkillData,
 };
 use chrono::{DateTime, Utc};
 use deadpool_postgres::{Client, Transaction};
@@ -27,10 +27,6 @@ pub async fn create_group(client: &mut Client, create_group: &CreateGroup) -> Re
         .try_get(0)
         .map_err(ApiError::GroupCreationError)?;
 
-    transaction
-        .execute(&create_member_stmt, &[&group_id, &SHARED_MEMBER])
-        .await
-        .map_err(ApiError::GroupCreationError)?;
     for member_name in &create_group.member_names {
         transaction
             .execute(&create_member_stmt, &[&group_id, &member_name])
@@ -49,21 +45,6 @@ pub async fn add_group_member(
     group_id: i64,
     member_name: &str,
 ) -> Result<(), ApiError> {
-    let member_count_stmt = client
-        .prepare_cached(
-            "SELECT COUNT(*) FROM groupironman.members WHERE group_id=$1 AND member_name!=$2",
-        )
-        .await?;
-    let member_count: i64 = client
-        .query_one(&member_count_stmt, &[&group_id, &SHARED_MEMBER])
-        .await?
-        .try_get(0)
-        .map_err(ApiError::AddMemberError)?;
-
-    if member_count >= 5 {
-        return Err(ApiError::GroupFullError);
-    }
-
     let create_member_stmt = client
         .prepare_cached("INSERT INTO groupironman.members (group_id, member_name) VALUES($1, $2)")
         .await?;
@@ -483,6 +464,96 @@ pub async fn commit_migration(transaction: &Transaction<'_>, name: &str) -> Resu
     Ok(())
 }
 
+pub async fn store_pairing_code(
+    client: &Client,
+    code: &str,
+    group_id: i64,
+    expires_at: &DateTime<Utc>,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.pairing_codes (code, group_id, expires_at) VALUES($1, $2, $3)",
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&code, &group_id, &expires_at])
+        .await?;
+    Ok(())
+}
+
+pub async fn consume_pairing_code(
+    client: &Client,
+    code: &str,
+) -> Result<i64, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "DELETE FROM groupironman.pairing_codes WHERE code=$1 AND expires_at > NOW() RETURNING group_id",
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&code])
+        .await
+        .map_err(ApiError::PairingCodeError)?;
+    Ok(row.try_get(0)?)
+}
+
+pub async fn store_device(
+    client: &Client,
+    device_id: &str,
+    group_id: i64,
+    token_hash: &str,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.devices (device_id, group_id, token_hash) VALUES($1, $2, $3)",
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&device_id, &group_id, &token_hash])
+        .await?;
+    Ok(())
+}
+
+pub async fn get_device_group(
+    client: &Client,
+    token_hash: &str,
+) -> Result<i64, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "SELECT group_id FROM groupironman.devices WHERE token_hash=$1",
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&token_hash])
+        .await
+        .map_err(ApiError::DeviceAuthError)?;
+    Ok(row.try_get(0)?)
+}
+
+pub async fn cleanup_expired_pairing_codes(client: &Client) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached("DELETE FROM groupironman.pairing_codes WHERE expires_at <= NOW()")
+        .await?;
+    client.execute(&stmt, &[]).await?;
+    Ok(())
+}
+
+pub async fn ensure_member_exists(
+    client: &Client,
+    group_id: i64,
+    member_name: &str,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.members (group_id, member_name) VALUES($1, $2) ON CONFLICT (group_id, member_name) DO NOTHING",
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&group_id, &member_name])
+        .await?;
+    Ok(())
+}
+
 pub async fn update_schema(client: &mut Client) -> Result<(), ApiError> {
     client
         .execute(
@@ -838,6 +909,37 @@ END;$$;
         }
 
         commit_migration(&transaction, "update_timestamp_triggers").await?;
+        transaction.commit().await?;
+    }
+
+    if !has_migration_run(client, "add_device_pairing_tables").await? {
+        let transaction = client.transaction().await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.pairing_codes (
+    code TEXT PRIMARY KEY,
+    group_id BIGINT NOT NULL REFERENCES groupironman.groups(group_id),
+    expires_at TIMESTAMPTZ NOT NULL
+)
+"#,
+                &[],
+            )
+            .await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.devices (
+    device_id TEXT PRIMARY KEY,
+    group_id BIGINT NOT NULL REFERENCES groupironman.groups(group_id),
+    token_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+"#,
+                &[],
+            )
+            .await?;
+        commit_migration(&transaction, "add_device_pairing_tables").await?;
         transaction.commit().await?;
     }
 

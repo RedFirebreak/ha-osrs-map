@@ -2121,6 +2121,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mimalloc",
+ "rand",
  "regex",
  "reqwest",
  "serde",
