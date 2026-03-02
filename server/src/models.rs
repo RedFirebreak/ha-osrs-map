@@ -300,3 +300,43 @@ pub struct IngestPayload {
     #[serde(rename = "tickDelay")]
     pub tick_delay: Option<i32>,
 }
+
+// --- Discord OAuth models ---
+
+#[derive(Deserialize)]
+pub struct DiscordCallbackQuery {
+    pub code: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub state: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DiscordTokenResponse {
+    pub access_token: String,
+    pub token_type: String,
+}
+
+#[derive(Deserialize)]
+pub struct DiscordUser {
+    pub id: String,
+    pub username: String,
+    #[allow(dead_code)]
+    pub discriminator: String,
+    #[serde(default)]
+    pub global_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct DiscordGuild {
+    pub id: String,
+    #[allow(dead_code)]
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct DiscordEnabledResponse {
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_url: Option<String>,
+}

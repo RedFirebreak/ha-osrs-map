@@ -27,3 +27,18 @@ login-page {
   text-align: center;
   margin-top: 1em;
 }
+
+.login__discord-divider {
+  margin-top: 1em;
+  text-align: center;
+  color: #aaa;
+}
+
+.login__discord-button {
+  margin-top: 0.5em;
+  text-align: center;
+  text-decoration: none;
+  background-color: #5865F2;
+  color: #fff;
+  cursor: pointer;
+}

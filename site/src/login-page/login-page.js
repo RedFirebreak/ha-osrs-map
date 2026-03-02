@@ -41,6 +41,25 @@ export class LoginPage extends BaseElement {
     this.loginButton = this.querySelector(".login__button");
     this.error = this.querySelector(".login__error");
     this.eventListener(this.loginButton, "click", this.login.bind(this));
+
+    this.checkDiscordEnabled();
+  }
+
+  async checkDiscordEnabled() {
+    try {
+      const data = await api.getDiscordEnabled();
+      if (data.enabled && data.auth_url) {
+        const divider = this.querySelector(".login__discord-divider");
+        const discordBtn = this.querySelector(".login__discord-button");
+        if (divider) divider.style.display = "";
+        if (discordBtn) {
+          discordBtn.style.display = "";
+          discordBtn.href = data.auth_url;
+        }
+      }
+    } catch (e) {
+      // Discord not available, hide button
+    }
   }
 
   disconnectedCallback() {

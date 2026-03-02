@@ -6,6 +6,7 @@ mod collection_log;
 mod config;
 mod crypto;
 mod db;
+mod discord_routes;
 mod error;
 mod models;
 mod unauthed;
@@ -54,7 +55,9 @@ async fn main() -> std::io::Result<()> {
         let auth_scope = web::scope("/api/auth")
             .service(auth_routes::setup_status)
             .service(auth_routes::setup)
-            .service(auth_routes::login);
+            .service(auth_routes::login)
+            .service(discord_routes::discord_enabled)
+            .service(discord_routes::discord_callback);
 
         // Session-protected auth endpoints
         let session_auth_scope = web::scope("/api/auth")

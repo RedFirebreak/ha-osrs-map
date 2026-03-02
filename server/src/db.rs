@@ -1070,6 +1070,52 @@ CREATE TABLE IF NOT EXISTS groupironman.user_player_links (
         transaction.commit().await?;
     }
 
+    if !has_migration_run(client, "add_discord_users_table").await? {
+        let transaction = client.transaction().await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.discord_users (
+    discord_id TEXT NOT NULL,
+    user_id BIGINT NOT NULL REFERENCES groupironman.users(user_id) ON DELETE CASCADE,
+    discord_username TEXT NOT NULL,
+    linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (discord_id)
+)
+"#,
+                &[],
+            )
+            .await?;
+        transaction
+            .execute(
+                "CREATE INDEX IF NOT EXISTS idx_discord_users_user_id ON groupironman.discord_users(user_id)",
+                &[],
+            )
+            .await?;
+        commit_migration(&transaction, "add_discord_users_table").await?;
+        transaction.commit().await?;
+    }
+
+    // Make password_hash nullable for Discord-only users
+    if !has_migration_run(client, "make_password_hash_nullable").await? {
+        let transaction = client.transaction().await?;
+        transaction
+            .execute(
+                "ALTER TABLE groupironman.users ALTER COLUMN password_hash DROP NOT NULL",
+                &[],
+            )
+            .await?;
+        // Set a default empty string for password_hash
+        transaction
+            .execute(
+                "ALTER TABLE groupironman.users ALTER COLUMN password_hash SET DEFAULT ''",
+                &[],
+            )
+            .await?;
+        commit_migration(&transaction, "make_password_hash_nullable").await?;
+        transaction.commit().await?;
+    }
+
     Ok(())
 }
 
@@ -1508,4 +1554,66 @@ ORDER BY u.username
         result.push(row.try_get(0)?);
     }
     Ok(result)
+}
+
+// ===================== Discord User Functions =====================
+
+pub async fn get_user_by_discord_id(
+    client: &Client,
+    discord_id: &str,
+) -> Result<Option<(i64, String, String, bool)>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+SELECT u.user_id, u.username, u.role, u.enabled
+FROM groupironman.discord_users d
+JOIN groupironman.users u ON d.user_id = u.user_id
+WHERE d.discord_id=$1
+"#,
+        )
+        .await?;
+    let row = client.query_opt(&stmt, &[&discord_id]).await?;
+    match row {
+        Some(r) => Ok(Some((
+            r.try_get(0)?,
+            r.try_get(1)?,
+            r.try_get(2)?,
+            r.try_get(3)?,
+        ))),
+        None => Ok(None),
+    }
+}
+
+pub async fn create_discord_user_link(
+    client: &Client,
+    discord_id: &str,
+    user_id: i64,
+    discord_username: &str,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.discord_users (discord_id, user_id, discord_username) VALUES($1, $2, $3) ON CONFLICT (discord_id) DO UPDATE SET discord_username=$3",
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&discord_id, &user_id, &discord_username])
+        .await?;
+    Ok(())
+}
+
+pub async fn create_user_no_password(
+    client: &Client,
+    username: &str,
+    role: &str,
+) -> Result<i64, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "INSERT INTO groupironman.users (username, password_hash, role) VALUES($1, '', $2) RETURNING user_id",
+        )
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&username, &role])
+        .await
+        .map_err(|_| ApiError::BadRequest("Username already exists".to_string()))?;
+    Ok(row.try_get(0)?)
 }
