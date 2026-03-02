@@ -1,5 +1,4 @@
 import { BaseElement } from "../base-element/base-element";
-import { storage } from "../data/storage";
 import { api } from "../data/api";
 
 export class SetupInstructions extends BaseElement {
@@ -7,12 +6,9 @@ export class SetupInstructions extends BaseElement {
     super();
   }
 
-  /* eslint-disable no-unused-vars */
   html() {
-    const group = storage.getGroup();
     return `{{setup-instructions.html}}`;
   }
-  /* eslint-enable no-unused-vars */
 
   connectedCallback() {
     super.connectedCallback();
@@ -35,14 +31,6 @@ export class SetupInstructions extends BaseElement {
     result.textContent = "";
 
     try {
-      const group = storage.getGroup();
-      if (!group.groupName || !group.groupToken) {
-        error.textContent = "No group credentials found. Please log in first.";
-        btn.disabled = false;
-        btn.textContent = "Generate Pairing Code";
-        return;
-      }
-      api.setCredentials(group.groupName, group.groupToken);
       const response = await api.generatePairingCode();
 
       if (!response.ok) {

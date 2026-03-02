@@ -12,10 +12,19 @@ export class LogoutPage extends BaseElement {
     return `{{logout-page.html}}`;
   }
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
     exampleData.disable();
+
+    // Attempt server-side logout
+    try {
+      await api.logout();
+    } catch (e) {
+      // Continue even if server logout fails
+    }
+
     api.disable();
+    storage.clearSession();
     storage.clearGroup();
     window.history.pushState("", "", "/");
   }

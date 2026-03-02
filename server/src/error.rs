@@ -1,8 +1,6 @@
 use actix_web::{HttpResponse, ResponseError};
 use deadpool_postgres::PoolError;
-use derive_more::{Display, From};
-
-#[derive(Debug, Display, From)]
+use derive_more::{Display, From};#[derive(Debug, Display, From)]
 pub enum ApiError {
     PoolError(PoolError),
     PGError(tokio_postgres::error::Error),
@@ -31,6 +29,16 @@ pub enum ApiError {
     DeviceAuthError(tokio_postgres::error::Error),
     ReqwestError(reqwest::Error),
     GroupMemberValidationError(String),
+    #[display("Unauthorized")]
+    #[from(ignore)]
+    Unauthorized,
+    #[display("Forbidden")]
+    #[from(ignore)]
+    Forbidden,
+    #[display("Bad request: {}", _0)]
+    #[from(ignore)]
+    BadRequest(String),
+    BcryptError(bcrypt::BcryptError),
 }
 impl std::error::Error for ApiError {}
 fn handle_pg_error(err: &tokio_postgres::error::Error, name: &str) -> HttpResponse {
@@ -81,6 +89,19 @@ impl ResponseError for ApiError {
             ApiError::GroupMemberValidationError(ref reason) => {
                 log::error!("Validation error: {}", reason);
                 HttpResponse::BadRequest().body(reason.clone())
+            }
+            ApiError::Unauthorized => {
+                HttpResponse::Unauthorized().body("Unauthorized")
+            }
+            ApiError::Forbidden => {
+                HttpResponse::Forbidden().body("Forbidden")
+            }
+            ApiError::BadRequest(ref msg) => {
+                HttpResponse::BadRequest().body(msg.clone())
+            }
+            ApiError::BcryptError(ref err) => {
+                log::error!("BcryptError: {}", err);
+                HttpResponse::InternalServerError().finish()
             }
         }
     }

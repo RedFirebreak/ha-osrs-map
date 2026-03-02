@@ -9,26 +9,29 @@ class Api {
     this.createGroupUrl = `${this.baseUrl}/create-group`;
     this.exampleDataEnabled = false;
     this.enabled = false;
+    this.sessionToken = null;
+    this.username = null;
+    this.role = null;
   }
 
   get getGroupDataUrl() {
-    return `${this.baseUrl}/group/${this.groupName}/get-group-data`;
+    return `${this.baseUrl}/group/get-group-data`;
   }
 
   get addMemberUrl() {
-    return `${this.baseUrl}/group/${this.groupName}/add-group-member`;
+    return `${this.baseUrl}/group/add-group-member`;
   }
 
   get deleteMemberUrl() {
-    return `${this.baseUrl}/group/${this.groupName}/delete-group-member`;
+    return `${this.baseUrl}/group/delete-group-member`;
   }
 
   get renameMemberUrl() {
-    return `${this.baseUrl}/group/${this.groupName}/rename-group-member`;
+    return `${this.baseUrl}/group/rename-group-member`;
   }
 
   get amILoggedInUrl() {
-    return `${this.baseUrl}/group/${this.groupName}/am-i-logged-in`;
+    return `${this.baseUrl}/auth/me`;
   }
 
   get gePricesUrl() {
@@ -36,7 +39,7 @@ class Api {
   }
 
   get skillDataUrl() {
-    return `${this.baseUrl}/group/${this.groupName}/get-skill-data`;
+    return `${this.baseUrl}/group/get-skill-data`;
   }
 
   get captchaEnabledUrl() {
@@ -47,27 +50,66 @@ class Api {
     return `${this.baseUrl}/collection-log-info`;
   }
 
+  get setupStatusUrl() {
+    return `${this.baseUrl}/auth/setup-status`;
+  }
+
+  get setupUrl() {
+    return `${this.baseUrl}/auth/setup`;
+  }
+
+  get loginUrl() {
+    return `${this.baseUrl}/auth/login`;
+  }
+
+  get logoutUrl() {
+    return `${this.baseUrl}/auth/logout`;
+  }
+
+  get changePasswordUrl() {
+    return `${this.baseUrl}/auth/change-password`;
+  }
+
+  get meUrl() {
+    return `${this.baseUrl}/auth/me`;
+  }
+
+  // Auth headers using session cookie + Bearer fallback
+  authHeaders() {
+    const headers = {};
+    if (this.sessionToken) {
+      headers["Authorization"] = `Bearer ${this.sessionToken}`;
+    }
+    return headers;
+  }
+
+  setSession(sessionToken, username, role) {
+    this.sessionToken = sessionToken;
+    this.username = username;
+    this.role = role;
+  }
+
+  // Legacy compat
   setCredentials(groupName, groupToken) {
     this.groupName = groupName;
     this.groupToken = groupToken;
   }
 
   async restart() {
-    const groupName = this.groupName;
-    const groupToken = this.groupToken;
-    await this.enable(groupName, groupToken);
+    await this.enable();
   }
 
   async enable(groupName, groupToken) {
     await this.disable();
     this.nextCheck = new Date(0).toISOString();
-    this.setCredentials(groupName, groupToken);
+
+    // Legacy compat
+    if (groupName) {
+      this.setCredentials(groupName, groupToken);
+    }
 
     if (!this.enabled) {
       this.enabled = true;
-      // getGroupInterval is a Promise so we can make sure this method does not leak
-      // any intervals with multiple calls to .enable(). This could be possible because of
-      // the wait for the item and quest data loads before we create the interval.
       this.getGroupInterval = pubsub.waitForAllEvents("item-data-loaded", "quest-data-loaded").then(() => {
         return utility.callOnInterval(this.getGroupData.bind(this), 1000);
       });
@@ -97,9 +139,8 @@ class Api {
       pubsub.publish("get-group-data", groupData);
     } else {
       const response = await fetch(`${this.getGroupDataUrl}?from_time=${nextCheck}`, {
-        headers: {
-          Authorization: this.groupToken,
-        },
+        headers: this.authHeaders(),
+        credentials: "same-origin",
       });
       if (!response.ok) {
         if (response.status === 401) {
@@ -133,8 +174,9 @@ class Api {
       body: JSON.stringify({ name: memberName }),
       headers: {
         "Content-Type": "application/json",
-        Authorization: this.groupToken,
+        ...this.authHeaders(),
       },
+      credentials: "same-origin",
       method: "POST",
     });
 
@@ -146,8 +188,9 @@ class Api {
       body: JSON.stringify({ name: memberName }),
       headers: {
         "Content-Type": "application/json",
-        Authorization: this.groupToken,
+        ...this.authHeaders(),
       },
+      credentials: "same-origin",
       method: "DELETE",
     });
 
@@ -159,8 +202,9 @@ class Api {
       body: JSON.stringify({ original_name: originalName, new_name: newName }),
       headers: {
         "Content-Type": "application/json",
-        Authorization: this.groupToken,
+        ...this.authHeaders(),
       },
+      credentials: "same-origin",
       method: "PUT",
     });
 
@@ -168,8 +212,9 @@ class Api {
   }
 
   async amILoggedIn() {
-    const response = await fetch(this.amILoggedInUrl, {
-      headers: { Authorization: this.groupToken },
+    const response = await fetch(this.meUrl, {
+      headers: this.authHeaders(),
+      credentials: "same-origin",
     });
 
     return response;
@@ -186,9 +231,8 @@ class Api {
       return skillData;
     } else {
       const response = await fetch(`${this.skillDataUrl}?period=${period}`, {
-        headers: {
-          Authorization: this.groupToken,
-        },
+        headers: this.authHeaders(),
+        credentials: "same-origin",
       });
       return response.json();
     }
@@ -200,11 +244,150 @@ class Api {
   }
 
   async generatePairingCode() {
-    const response = await fetch(`${this.baseUrl}/group/${this.groupName}/pair/code`, {
+    const response = await fetch(`${this.baseUrl}/group/pair/code`, {
+      method: "POST",
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  // --- User management API methods ---
+
+  async getSetupStatus() {
+    const response = await fetch(this.setupStatusUrl);
+    return response.json();
+  }
+
+  async setup(username, password) {
+    const response = await fetch(this.setupUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    return response;
+  }
+
+  async login(username, password) {
+    const response = await fetch(this.loginUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ username, password }),
+    });
+    return response;
+  }
+
+  async logout() {
+    const response = await fetch(this.logoutUrl, {
+      method: "POST",
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async changePassword(currentPassword, newPassword) {
+    const response = await fetch(this.changePasswordUrl, {
       method: "POST",
       headers: {
-        Authorization: this.groupToken,
+        "Content-Type": "application/json",
+        ...this.authHeaders(),
       },
+      credentials: "same-origin",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    return response;
+  }
+
+  async getMe() {
+    const response = await fetch(this.meUrl, {
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  // --- Admin API methods ---
+
+  async adminListUsers() {
+    const response = await fetch(`${this.baseUrl}/admin/users`, {
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async adminCreateUser(username, password, role) {
+    const response = await fetch(`${this.baseUrl}/admin/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.authHeaders(),
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ username, password, role }),
+    });
+    return response;
+  }
+
+  async adminChangeUserRole(userId, role) {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/role`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.authHeaders(),
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ role }),
+    });
+    return response;
+  }
+
+  async adminDisableUser(userId) {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/disable`, {
+      method: "PUT",
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async adminEnableUser(userId) {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/enable`, {
+      method: "PUT",
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async adminKickUser(userId) {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}`, {
+      method: "DELETE",
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async adminChangeUserPassword(userId, newPassword) {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/password`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.authHeaders(),
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ new_password: newPassword }),
+    });
+    return response;
+  }
+
+  async adminGetAuditLog() {
+    const response = await fetch(`${this.baseUrl}/admin/audit-log`, {
+      headers: this.authHeaders(),
+      credentials: "same-origin",
     });
     return response;
   }

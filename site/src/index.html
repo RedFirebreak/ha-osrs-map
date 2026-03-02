@@ -67,6 +67,12 @@
       route-wrapper=".unauthed-section"
     ></app-route>
     <app-route
+      route-path="/setup"
+      route-component="setup-page"
+      route-outlet=".unauthed-section__outlet"
+      route-wrapper=".unauthed-section"
+    ></app-route>
+    <app-route
       route-path="/logout"
       route-component="logout-page"
       route-outlet=".unauthed-section__outlet"
@@ -107,6 +113,12 @@
     <app-route
       route-path="/panels"
       route-component="panels-page"
+      route-outlet=".authed-section__outlet"
+      route-wrapper=".authed-section"
+    ></app-route>
+    <app-route
+      route-path="/admin"
+      route-component="admin-portal"
       route-outlet=".authed-section__outlet"
       route-wrapper=".authed-section"
     ></app-route>

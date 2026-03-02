@@ -134,6 +134,88 @@ pub struct PairResponse {
     pub token: String,
 }
 
+// --- User management models ---
+
+#[derive(Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct LoginResponse {
+    pub ok: bool,
+    pub session_token: String,
+    pub role: String,
+    pub username: String,
+}
+
+#[derive(Serialize)]
+pub struct SessionUser {
+    pub user_id: i64,
+    pub username: String,
+    pub role: String,
+    pub enabled: bool,
+}
+
+#[derive(Deserialize)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub password: String,
+    #[serde(default = "default_role")]
+    pub role: String,
+}
+fn default_role() -> String {
+    "member".to_string()
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Deserialize)]
+pub struct AdminChangePasswordRequest {
+    pub new_password: String,
+}
+
+#[derive(Deserialize)]
+pub struct ChangeRoleRequest {
+    pub role: String,
+}
+
+#[derive(Serialize)]
+pub struct UserInfo {
+    pub user_id: i64,
+    pub username: String,
+    pub role: String,
+    pub enabled: bool,
+    pub created_at: DateTime<Utc>,
+    pub last_seen: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+pub struct AuditLogEntry {
+    pub log_id: i64,
+    pub user_id: Option<i64>,
+    pub action: String,
+    pub target_user_id: Option<i64>,
+    pub details: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct SetupRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct SetupStatusResponse {
+    pub needs_setup: bool,
+}
+
 #[derive(Deserialize)]
 pub struct IngestLocation {
     pub x: i32,
