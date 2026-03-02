@@ -554,19 +554,6 @@ pub async fn ensure_member_exists(
     Ok(())
 }
 
-pub async fn get_group_name_by_id(
-    client: &Client,
-    group_id: i64,
-) -> Result<String, ApiError> {
-    let stmt = client
-        .prepare_cached("SELECT group_name FROM groupironman.groups WHERE group_id=$1")
-        .await?;
-    let row = client
-        .query_one(&stmt, &[&group_id])
-        .await?;
-    Ok(row.try_get(0)?)
-}
-
 pub async fn update_schema(client: &mut Client) -> Result<(), ApiError> {
     client
         .execute(

@@ -18,6 +18,8 @@ const SKILL_ORDER: &[&str] = &[
     "Slayer", "Farming", "Runecraft", "Hunter", "Construction",
 ];
 
+const DEVICE_TOKEN_SALT: &str = "osrs-device";
+
 fn generate_pairing_code() -> String {
     use rand::Rng;
     let mut rng = rand::rng();
@@ -47,7 +49,7 @@ pub async fn create_pairing_code(
     }))
 }
 
-#[post("/pair")]
+#[post("/osrs-data/pair")]
 pub async fn pair_device(
     body: web::Json<PairRequest>,
     db_pool: web::Data<Pool>,
@@ -55,11 +57,10 @@ pub async fn pair_device(
     let client: Client = db_pool.get().await.map_err(ApiError::PoolError)?;
 
     let group_id = db::consume_pairing_code(&client, &body.code).await?;
-    let group_name = db::get_group_name_by_id(&client, group_id).await?;
 
     let device_id = uuid::Uuid::new_v4().hyphenated().to_string();
     let raw_token = uuid::Uuid::new_v4().hyphenated().to_string();
-    let hashed_token = token_hash(&raw_token, &group_name);
+    let hashed_token = token_hash(&raw_token, DEVICE_TOKEN_SALT);
 
     db::store_device(&client, &device_id, group_id, &hashed_token).await?;
 
@@ -149,7 +150,7 @@ fn convert_ingest_to_group_member(payload: &IngestPayload, group_id: i64) -> Gro
     }
 }
 
-#[post("/group/{group_name}/ingest")]
+#[post("/osrs-data/events")]
 pub async fn ingest(
     req: HttpRequest,
     body: web::Json<IngestPayload>,
@@ -168,16 +169,9 @@ pub async fn ingest(
         }
     };
 
-    let group_name = match req.match_info().get("group_name") {
-        Some(name) => name,
-        None => {
-            return Ok(HttpResponse::BadRequest().body("Missing group name"));
-        }
-    };
-
     let client: Client = db_pool.get().await.map_err(ApiError::PoolError)?;
 
-    let hashed_token = token_hash(token, group_name);
+    let hashed_token = token_hash(token, DEVICE_TOKEN_SALT);
     let group_id = db::get_device_group(&client, &hashed_token).await?;
 
     let player_name = &body.player.name;

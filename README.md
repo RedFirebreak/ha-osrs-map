@@ -21,8 +21,8 @@ This application tracks information about your OSRS players and sends it to a se
 
 1. **Create a group** via the website (pick a group name, get a group token)
 2. **Generate a pairing code**: `POST /api/group/{group_name}/pair/code` (requires group token in `Authorization` header)
-3. **Pair a device**: `POST /api/pair` with `{ "code": "12345" }` — returns a device token
-4. **Ingest data**: `POST /api/group/{group_name}/ingest` with `X-Osrs-Token` header containing the device token
+3. **Pair a device**: `POST /api/osrs-data/pair` with `{ "code": "12345" }` — returns a device token
+4. **Ingest data**: `POST /api/osrs-data/events` with `X-Osrs-Token` header containing the device token
 5. Players are auto-added to the group on first successful ingestion
 
 # Self-hosting
