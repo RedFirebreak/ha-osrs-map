@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use deadpool_postgres::{Client, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::{HashMap, HashSet};
-use tokio_postgres::Row;
+use tokio_postgres::{error::SqlState, Row};
 
 const CURRENT_GROUP_VERSION: i32 = 2;
 pub async fn create_group(client: &mut Client, create_group: &CreateGroup) -> Result<(), ApiError> {
@@ -83,15 +83,29 @@ pub async fn delete_collection_log_data_for_member(
     transaction: &Transaction<'_>,
     member_id: i64,
 ) -> Result<(), ApiError> {
-    let a = "DELETE FROM groupironman.collection_log WHERE member_id=$1";
-    let delete_collection_stmt = transaction.prepare_cached(&a).await?;
-    transaction
-        .execute(&delete_collection_stmt, &[&member_id])
-        .await?;
+    let delete_queries = [
+        "DELETE FROM groupironman.collection_log WHERE member_id=$1",
+        "DELETE FROM groupironman.collection_log_new WHERE member_id=$1",
+    ];
 
-    let b = "DELETE FROM groupironman.collection_log_new WHERE member_id=$1";
-    let delete_new_stmt = transaction.prepare_cached(&b).await?;
-    transaction.execute(&delete_new_stmt, &[&member_id]).await?;
+    for (idx, query) in delete_queries.iter().enumerate() {
+        let savepoint = format!("sp_collection_log_{}", idx);
+        transaction.execute(&format!("SAVEPOINT {}", savepoint), &[]).await?;
+        
+        match transaction.execute(*query, &[&member_id]).await {
+            Ok(_) => {
+                transaction.execute(&format!("RELEASE SAVEPOINT {}", savepoint), &[]).await?;
+            }
+            Err(err) if err.code() == Some(&SqlState::UNDEFINED_TABLE) => {
+                log::debug!("Skipping collection-log cleanup for missing table: {}", query);
+                transaction.execute(&format!("ROLLBACK TO SAVEPOINT {}", savepoint), &[]).await?;
+            }
+            Err(err) => {
+                transaction.execute(&format!("ROLLBACK TO SAVEPOINT {}", savepoint), &[]).await?;
+                return Err(err.into());
+            }
+        }
+    }
 
     Ok(())
 }
