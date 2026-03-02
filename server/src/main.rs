@@ -114,8 +114,10 @@ async fn main() -> std::io::Result<()> {
 
         let json_config = web::JsonConfig::default().limit(100000);
         let cors = Cors::default()
-            .allow_any_origin()
-            .send_wildcard()
+            .allowed_origin("http://localhost:4000")
+            .allowed_origin("http://127.0.0.1:4000")
+            .allowed_origin("http://localhost:8080")
+            .allowed_origin("http://127.0.0.1:8080")
             .allowed_methods(vec!["GET", "POST", "DELETE", "PUT", "OPTIONS"])
             .allowed_headers(vec![
                 header::AUTHORIZATION,

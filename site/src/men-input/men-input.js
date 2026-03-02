@@ -56,6 +56,12 @@ export class MenInput extends BaseElement {
     return this.trim(this.input.value);
   }
 
+  set value(val) {
+    if (this.input) {
+      this.input.value = val;
+    }
+  }
+
   get valid() {
     return this.updateValueAndValidity();
   }
