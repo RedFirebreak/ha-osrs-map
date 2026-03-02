@@ -10,6 +10,24 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+function relativeTime(dateStr) {
+  if (!dateStr) return "Never";
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHr / 24);
+
+  if (diffSec < 60) return "just now";
+  if (diffMin < 60) return `${diffMin} min ago`;
+  if (diffHr < 24) return `${diffHr} hour${diffHr !== 1 ? "s" : ""} ago`;
+  if (diffDay < 30) return `${diffDay} day${diffDay !== 1 ? "s" : ""} ago`;
+  const diffMonth = Math.floor(diffDay / 30);
+  return `${diffMonth} month${diffMonth !== 1 ? "s" : ""} ago`;
+}
+
 export class AdminPortal extends BaseElement {
   constructor() {
     super();
@@ -100,7 +118,8 @@ export class AdminPortal extends BaseElement {
         const disabledBadge = !user.enabled
           ? `<span class="admin-portal__badge admin-portal__badge--disabled">disabled</span>`
           : "";
-        const lastSeen = user.last_seen ? new Date(user.last_seen).toLocaleString() : "Never";
+        const lastSeen = user.last_seen ? new Date(user.last_seen).toLocaleString() : "";
+        const lastSeenRelative = relativeTime(user.last_seen);
         const isSelf = user.username === session.username;
 
         let actions = "";
@@ -122,7 +141,7 @@ export class AdminPortal extends BaseElement {
               <strong>${escapeHtml(user.username)}</strong>
               ${roleBadge}
               ${disabledBadge}
-              <span style="font-size:0.85rem;color:#999">Last seen: ${escapeHtml(lastSeen)}</span>
+              <span style="font-size:0.85rem;color:#999" title="${escapeHtml(lastSeen)}">Last seen: ${escapeHtml(lastSeenRelative)}</span>
             </div>
             <div class="admin-portal__user-actions">${actions}</div>
           </div>
@@ -223,10 +242,11 @@ export class AdminPortal extends BaseElement {
     container.innerHTML = entries
       .map((entry) => {
         const time = new Date(entry.created_at).toLocaleString();
+        const timeRelative = relativeTime(entry.created_at);
         const details = entry.details || entry.action;
         return `
           <div class="admin-portal__audit-entry">
-            <span class="admin-portal__audit-time">${escapeHtml(time)}</span>
+            <span class="admin-portal__audit-time" title="${escapeHtml(time)}">${escapeHtml(timeRelative)}</span>
             <span>${escapeHtml(details)}</span>
           </div>
         `;
@@ -258,7 +278,8 @@ export class AdminPortal extends BaseElement {
       .map((player) => {
         const lastUpdated = player.last_updated
           ? new Date(player.last_updated).toLocaleString()
-          : "Never";
+          : "";
+        const lastUpdatedRelative = relativeTime(player.last_updated);
         const isStale = player.last_updated
           ? (Date.now() - new Date(player.last_updated).getTime()) > STALE_THRESHOLD_MS
           : true;
@@ -272,7 +293,7 @@ export class AdminPortal extends BaseElement {
             ${staleBadge}
             <span class="admin-portal__player-spacer"></span>
             <div class="admin-portal__player-actions">
-              <span class="admin-portal__badge admin-portal__badge--time">${escapeHtml(lastUpdated)}</span>
+              <span class="admin-portal__badge admin-portal__badge--time" title="${escapeHtml(lastUpdated)}">${escapeHtml(lastUpdatedRelative)}</span>
               <button class="men-button" data-player-action="show-users" data-player-name="${escapeHtml(player.member_name)}">Users</button>
               <button class="men-button" data-player-action="delete" data-player-name="${escapeHtml(player.member_name)}">Remove</button>
             </div>
