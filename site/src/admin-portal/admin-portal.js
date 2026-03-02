@@ -44,7 +44,10 @@ export class AdminPortal extends BaseElement {
     const roleSelect = this.querySelector(".admin-portal__role-dropdown");
     const errorEl = this.querySelector(".admin-portal__create-error");
 
-    if (!usernameInput.valid || !passwordInput.valid) return;
+    if (!usernameInput.valid || !passwordInput.valid) {
+      errorEl.innerHTML = "Please fill in all required fields.";
+      return;
+    }
 
     errorEl.innerHTML = "";
     try {
