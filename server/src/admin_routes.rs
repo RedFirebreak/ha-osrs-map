@@ -306,3 +306,34 @@ pub async fn delete_player(
 
     Ok(HttpResponse::Ok().json(serde_json::json!({"ok": true})))
 }
+
+#[get("/users/{user_id}/players")]
+pub async fn get_user_players(
+    _admin: AdminAuthenticated,
+    path: web::Path<i64>,
+    db_pool: web::Data<Pool>,
+    group_id: web::Data<i64>,
+) -> Result<HttpResponse, Error> {
+    let user_id = path.into_inner();
+    let client = db_pool.get().await.map_err(ApiError::PoolError)?;
+    let players = db::get_players_for_user(&client, user_id, **group_id).await?;
+    Ok(HttpResponse::Ok().json(players))
+}
+
+#[derive(serde::Deserialize)]
+pub struct PlayerLinksPath {
+    pub member_name: String,
+}
+
+#[get("/players/{member_name}/users")]
+pub async fn get_player_users(
+    _admin: AdminAuthenticated,
+    path: web::Path<PlayerLinksPath>,
+    db_pool: web::Data<Pool>,
+    group_id: web::Data<i64>,
+) -> Result<HttpResponse, Error> {
+    let member_name = &path.member_name;
+    let client = db_pool.get().await.map_err(ApiError::PoolError)?;
+    let users = db::get_users_for_player(&client, member_name, **group_id).await?;
+    Ok(HttpResponse::Ok().json(users))
+}

@@ -1050,6 +1050,26 @@ CREATE TABLE IF NOT EXISTS groupironman.audit_log (
         transaction.commit().await?;
     }
 
+    if !has_migration_run(client, "add_user_player_links_table").await? {
+        let transaction = client.transaction().await?;
+        transaction
+            .execute(
+                r#"
+CREATE TABLE IF NOT EXISTS groupironman.user_player_links (
+    user_id BIGINT NOT NULL REFERENCES groupironman.users(user_id) ON DELETE CASCADE,
+    member_name CITEXT NOT NULL,
+    group_id BIGINT NOT NULL REFERENCES groupironman.groups(group_id),
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, member_name, group_id)
+)
+"#,
+                &[],
+            )
+            .await?;
+        commit_migration(&transaction, "add_user_player_links_table").await?;
+        transaction.commit().await?;
+    }
+
     Ok(())
 }
 
@@ -1410,4 +1430,82 @@ pub async fn get_or_create_singleton_group(client: &mut Client) -> Result<i64, A
         .query_one(&create_stmt, &[&"clan", &placeholder_hash])
         .await?;
     Ok(row.try_get(0)?)
+}
+
+// User-player link tracking
+
+pub async fn get_device_user_id(
+    client: &Client,
+    token_hash: &str,
+) -> Result<Option<i64>, ApiError> {
+    let stmt = client
+        .prepare_cached("SELECT user_id FROM groupironman.devices WHERE token_hash=$1")
+        .await?;
+    let row = client
+        .query_one(&stmt, &[&token_hash])
+        .await
+        .map_err(ApiError::DeviceAuthError)?;
+    Ok(row.try_get::<_, Option<i64>>(0).unwrap_or(None))
+}
+
+pub async fn upsert_user_player_link(
+    client: &Client,
+    user_id: i64,
+    member_name: &str,
+    group_id: i64,
+) -> Result<(), ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+INSERT INTO groupironman.user_player_links (user_id, member_name, group_id, last_updated)
+VALUES($1, $2, $3, NOW())
+ON CONFLICT (user_id, member_name, group_id) DO UPDATE SET last_updated = NOW()
+"#,
+        )
+        .await?;
+    client
+        .execute(&stmt, &[&user_id, &member_name, &group_id])
+        .await?;
+    Ok(())
+}
+
+pub async fn get_players_for_user(
+    client: &Client,
+    user_id: i64,
+    group_id: i64,
+) -> Result<Vec<String>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            "SELECT member_name FROM groupironman.user_player_links WHERE user_id=$1 AND group_id=$2 ORDER BY member_name",
+        )
+        .await?;
+    let rows = client.query(&stmt, &[&user_id, &group_id]).await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(row.try_get(0)?);
+    }
+    Ok(result)
+}
+
+pub async fn get_users_for_player(
+    client: &Client,
+    member_name: &str,
+    group_id: i64,
+) -> Result<Vec<String>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+SELECT u.username FROM groupironman.user_player_links l
+JOIN groupironman.users u ON l.user_id = u.user_id
+WHERE l.member_name=$1 AND l.group_id=$2
+ORDER BY u.username
+"#,
+        )
+        .await?;
+    let rows = client.query(&stmt, &[&member_name, &group_id]).await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(row.try_get(0)?);
+    }
+    Ok(result)
 }

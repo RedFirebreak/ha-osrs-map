@@ -263,6 +263,11 @@ pub async fn ingest(
 
     db::ensure_member_exists(&client, group_id, player_name).await?;
 
+    // Track user-player link
+    if let Ok(Some(user_id)) = db::get_device_user_id(&client, &hashed_token).await {
+        let _ = db::upsert_user_player_link(&client, user_id, player_name, group_id).await;
+    }
+
     let group_member = convert_ingest_to_group_member(&body, group_id);
 
     match sender.send(group_member).await {

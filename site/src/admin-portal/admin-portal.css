@@ -19,6 +19,7 @@
 .admin-portal__column h3 {
   margin: 0 0 0.5rem 0;
   flex-shrink: 0;
+  font-size: 1.3rem;
 }
 
 .admin-portal__scroll-area {
@@ -32,7 +33,7 @@
 }
 
 .admin-portal__user-list {
-  margin-bottom: 1rem;
+  margin-top: 0.75rem;
 }
 
 .admin-portal__user-row {
@@ -48,6 +49,7 @@
   gap: 0.5rem;
   align-items: center;
   flex-wrap: wrap;
+  font-size: 1rem;
 }
 
 .admin-portal__user-actions {
@@ -56,14 +58,9 @@
   flex-wrap: wrap;
 }
 
-.admin-portal__user-actions button {
-  font-size: 0.8rem;
-  padding: 0.2rem 0.5rem;
-}
-
 .admin-portal__badge {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.4rem;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.5rem;
   border-radius: 3px;
   font-weight: bold;
 }
@@ -83,65 +80,95 @@
   color: #fff;
 }
 
+.admin-portal__badge--stale {
+  background: #8b0000;
+  color: #fff;
+}
+
+.admin-portal__badge--time {
+  background: rgba(255,255,255,0.1);
+  color: #999;
+  cursor: default;
+  font-weight: normal;
+  font-size: 0.8rem;
+}
+
 .admin-portal__create-user {
-  padding: 1rem;
-  margin-top: 1rem;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.admin-portal__create-user h4 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
 }
 
 .admin-portal__role-select {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  font-size: 1rem;
 }
 
 .admin-portal__role-select select {
   padding: 0.3rem;
+  font-size: 1rem;
 }
 
 .admin-portal__audit-log {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
 }
 
 .admin-portal__audit-entry {
-  padding: 0.3rem 0;
+  padding: 0.35rem 0;
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
 .admin-portal__audit-time {
   color: #999;
   margin-right: 0.5rem;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
 }
 
 .admin-portal__player-list {
-  margin-bottom: 1rem;
+  margin-bottom: 0;
 }
 
 .admin-portal__player-row {
   display: flex;
-  flex-direction: column;
-  padding: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.5rem;
   border-bottom: 1px solid rgba(255,255,255,0.1);
-  gap: 0.35rem;
+  gap: 0.5rem;
 }
 
-.admin-portal__player-info {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
+.admin-portal__player-name {
+  font-weight: bold;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.admin-portal__player-spacer {
+  flex: 1;
 }
 
 .admin-portal__player-actions {
   display: flex;
-  gap: 0.25rem;
-  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  flex-shrink: 0;
 }
 
-.admin-portal__player-actions button {
-  font-size: 0.8rem;
-  padding: 0.2rem 0.5rem;
+.admin-portal__linked-list {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  color: #ccc;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: rgba(255,255,255,0.03);
+}
+
+.admin-portal__linked-list strong {
+  color: #fff;
 }

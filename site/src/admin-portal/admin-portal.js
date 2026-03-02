@@ -114,6 +114,7 @@ export class AdminPortal extends BaseElement {
           actions += `<button class="men-button" data-action="role" data-user-id="${user.user_id}" data-role="${newRole}">Make ${newRole}</button>`;
           actions += `<button class="men-button" data-action="kick" data-user-id="${user.user_id}">Kick</button>`;
         }
+        actions += `<button class="men-button" data-action="show-players" data-user-id="${user.user_id}">Players</button>`;
 
         return `
           <div class="admin-portal__user-row">
@@ -121,10 +122,11 @@ export class AdminPortal extends BaseElement {
               <strong>${escapeHtml(user.username)}</strong>
               ${roleBadge}
               ${disabledBadge}
-              <span style="font-size:0.8rem;color:#999">Last seen: ${escapeHtml(lastSeen)}</span>
+              <span style="font-size:0.85rem;color:#999">Last seen: ${escapeHtml(lastSeen)}</span>
             </div>
             <div class="admin-portal__user-actions">${actions}</div>
           </div>
+          <div class="admin-portal__linked-list" data-user-players-id="${user.user_id}" style="display:none"></div>
         `;
       })
       .join("");
@@ -138,6 +140,11 @@ export class AdminPortal extends BaseElement {
   async handleUserAction(btn) {
     const action = btn.dataset.action;
     const userId = parseInt(btn.dataset.userId);
+
+    if (action === "show-players") {
+      await this.toggleUserPlayers(userId);
+      return;
+    }
 
     try {
       let response;
@@ -163,6 +170,31 @@ export class AdminPortal extends BaseElement {
         this.loadUsers();
         this.loadAuditLog();
       }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  async toggleUserPlayers(userId) {
+    const el = this.querySelector(`[data-user-players-id="${userId}"]`);
+    if (!el) return;
+
+    if (el.style.display !== "none") {
+      el.style.display = "none";
+      el.innerHTML = "";
+      return;
+    }
+
+    try {
+      const response = await api.adminGetUserPlayers(userId);
+      if (!response.ok) return;
+      const players = await response.json();
+      if (players.length === 0) {
+        el.innerHTML = "No linked players";
+      } else {
+        el.innerHTML = `<strong>Linked players:</strong> ${players.map((p) => escapeHtml(p)).join(", ")}`;
+      }
+      el.style.display = "";
     } catch (e) {
       // ignore
     }
@@ -218,7 +250,7 @@ export class AdminPortal extends BaseElement {
     if (!container) return;
 
     if (players.length === 0) {
-      container.innerHTML = "<p>No players yet. Players appear here when devices are paired and data is received.</p>";
+      container.innerHTML = "<p>No players yet.</p>";
       return;
     }
 
@@ -231,20 +263,21 @@ export class AdminPortal extends BaseElement {
           ? (Date.now() - new Date(player.last_updated).getTime()) > STALE_THRESHOLD_MS
           : true;
         const staleBadge = isStale
-          ? `<span class="admin-portal__badge admin-portal__badge--disabled">stale</span>`
+          ? `<span class="admin-portal__badge admin-portal__badge--stale">stale</span>`
           : "";
 
         return `
           <div class="admin-portal__player-row">
-            <div class="admin-portal__player-info">
-              <strong>${escapeHtml(player.member_name)}</strong>
-              ${staleBadge}
-              <span style="font-size:0.8rem;color:#999">Last updated: ${escapeHtml(lastUpdated)}</span>
-            </div>
+            <span class="admin-portal__player-name">${escapeHtml(player.member_name)}</span>
+            ${staleBadge}
+            <span class="admin-portal__player-spacer"></span>
             <div class="admin-portal__player-actions">
+              <span class="admin-portal__badge admin-portal__badge--time">${escapeHtml(lastUpdated)}</span>
+              <button class="men-button" data-player-action="show-users" data-player-name="${escapeHtml(player.member_name)}">Users</button>
               <button class="men-button" data-player-action="delete" data-player-name="${escapeHtml(player.member_name)}">Remove</button>
             </div>
           </div>
+          <div class="admin-portal__linked-list" data-player-users-name="${escapeHtml(player.member_name)}" style="display:none"></div>
         `;
       })
       .join("");
@@ -257,6 +290,11 @@ export class AdminPortal extends BaseElement {
   async handlePlayerAction(btn) {
     const action = btn.dataset.playerAction;
     const playerName = btn.dataset.playerName;
+
+    if (action === "show-users") {
+      await this.togglePlayerUsers(playerName);
+      return;
+    }
 
     if (action === "delete") {
       if (!confirm(`Are you sure you want to remove player '${playerName}'? All player data will be permanently deleted.`)) {
@@ -271,6 +309,31 @@ export class AdminPortal extends BaseElement {
       } catch (e) {
         // ignore
       }
+    }
+  }
+
+  async togglePlayerUsers(playerName) {
+    const el = this.querySelector(`[data-player-users-name="${CSS.escape(playerName)}"]`);
+    if (!el) return;
+
+    if (el.style.display !== "none") {
+      el.style.display = "none";
+      el.innerHTML = "";
+      return;
+    }
+
+    try {
+      const response = await api.adminGetPlayerUsers(playerName);
+      if (!response.ok) return;
+      const users = await response.json();
+      if (users.length === 0) {
+        el.innerHTML = "No linked users";
+      } else {
+        el.innerHTML = `<strong>Linked users:</strong> ${users.map((u) => escapeHtml(u)).join(", ")}`;
+      }
+      el.style.display = "";
+    } catch (e) {
+      // ignore
     }
   }
 }

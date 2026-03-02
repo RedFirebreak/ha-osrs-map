@@ -408,6 +408,22 @@ class Api {
     });
     return response;
   }
+
+  async adminGetUserPlayers(userId) {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/players`, {
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async adminGetPlayerUsers(memberName) {
+    const response = await fetch(`${this.baseUrl}/admin/players/${encodeURIComponent(memberName)}/users`, {
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
 }
 
 const api = new Api();
