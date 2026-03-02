@@ -198,6 +198,16 @@ class Api {
     const response = await fetch(this.captchaEnabledUrl);
     return response.json();
   }
+
+  async generatePairingCode() {
+    const response = await fetch(`${this.baseUrl}/group/${this.groupName}/pair/code`, {
+      method: "POST",
+      headers: {
+        Authorization: this.groupToken,
+      },
+    });
+    return response;
+  }
 }
 
 const api = new Api();

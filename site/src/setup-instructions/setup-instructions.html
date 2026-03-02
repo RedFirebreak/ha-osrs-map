@@ -19,15 +19,33 @@
   </div>
 
   <div class="setup__block">
+    <h3>Device Pairing</h3>
+    <p>
+      Generate a pairing code and enter it in the RuneLite plugin to link a player's client to the group.
+      Each code expires after 5 minutes.
+    </p>
+    <button class="men-button setup__pair-btn">Generate Pairing Code</button>
+    <div class="setup__pair-code-display">
+      <span class="setup__pair-result"></span>
+    </div>
+    <div class="setup__pair-error"></div>
+  </div>
+
+  <div class="setup__block">
     <h3>Setup</h3>
     <p>
       This app requires each group member to install a RuneLite plugin from the Plugin Hub in order to track player
       information. After installing the plugin, use device pairing to link each player's client to the group.
     </p>
     <p>
-      <strong>Device Pairing:</strong> A group admin generates a 5-digit pairing code (via the API), and each player
-      enters the code in their RuneLite plugin to pair their device. Once paired, player data is automatically ingested.
+      <strong>Steps:</strong>
     </p>
+    <ol>
+      <li>Install the RuneLite plugin from the Plugin Hub.</li>
+      <li>Click "Generate Pairing Code" above to get a 5-digit code.</li>
+      <li>Enter the code in the RuneLite plugin to pair your device.</li>
+      <li>Once paired, player data is automatically ingested.</li>
+    </ol>
   </div>
 
   <div class="setup__config">
