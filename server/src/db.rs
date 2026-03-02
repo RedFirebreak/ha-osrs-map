@@ -1105,7 +1105,7 @@ CREATE TABLE IF NOT EXISTS groupironman.discord_users (
                 &[],
             )
             .await?;
-        // Set a default empty string for password_hash
+        // Default empty string for new rows (e.g. Discord-only users) where no password is provided
         transaction
             .execute(
                 "ALTER TABLE groupironman.users ALTER COLUMN password_hash SET DEFAULT ''",

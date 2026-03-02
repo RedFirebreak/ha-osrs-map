@@ -12,6 +12,10 @@ const SESSION_DURATION_HOURS: i64 = 72;
 const DISCORD_API_BASE: &str = "https://discord.com/api/v10";
 const DISCORD_OAUTH_AUTHORIZE: &str = "https://discord.com/api/oauth2/authorize";
 const DISCORD_OAUTH_TOKEN: &str = "https://discord.com/api/oauth2/token";
+const MAX_USERNAME_LEN: usize = 32;
+const MAX_USERNAME_CREATION_ATTEMPTS: usize = 10;
+// Reserve space for suffix like "_1234"
+const MAX_USERNAME_PREFIX_LEN: usize = MAX_USERNAME_LEN - 5;
 
 #[get("/discord/enabled")]
 pub async fn discord_enabled(config: web::Data<Config>) -> Result<HttpResponse, Error> {
@@ -171,7 +175,7 @@ pub async fn discord_callback(
     let sanitized: String = display_name
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
-        .take(32)
+        .take(MAX_USERNAME_LEN)
         .collect();
     let base_username = if sanitized.is_empty() {
         format!("discord_{}", &discord_user.id[..8.min(discord_user.id.len())])
@@ -182,16 +186,16 @@ pub async fn discord_callback(
     // Try to create user, appending suffix if username is taken
     let mut username = base_username.clone();
     let mut user_id: Option<i64> = None;
-    for attempt in 0..10 {
+    for attempt in 0..MAX_USERNAME_CREATION_ATTEMPTS {
         match db::create_user_no_password(&db_client, &username, "member").await {
             Ok(id) => {
                 user_id = Some(id);
                 break;
             }
-            Err(_) if attempt < 9 => {
+            Err(_) if attempt < MAX_USERNAME_CREATION_ATTEMPTS - 1 => {
                 let suffix = &discord_user.id
                     [discord_user.id.len().saturating_sub(4)..];
-                username = format!("{}_{}", &base_username[..base_username.len().min(27)], suffix);
+                username = format!("{}_{}", &base_username[..base_username.len().min(MAX_USERNAME_PREFIX_LEN)], suffix);
             }
             Err(e) => return Err(e.into()),
         }
