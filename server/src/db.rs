@@ -2,7 +2,7 @@ use crate::crypto::token_hash;
 use crate::error::ApiError;
 use crate::models::{
     AggregateSkillData, AuditLogEntry, CreateGroup, GroupMember, GroupSkillData,
-    MemberSkillData, SessionUser, UserInfo,
+    MemberSkillData, PlayerInfo, SessionUser, UserInfo,
 };
 use chrono::{DateTime, Utc};
 use deadpool_postgres::{Client, Transaction};
@@ -553,6 +553,35 @@ pub async fn ensure_member_exists(
         .execute(&stmt, &[&group_id, &member_name])
         .await?;
     Ok(())
+}
+
+pub async fn list_players(
+    client: &Client,
+    group_id: i64,
+) -> Result<Vec<PlayerInfo>, ApiError> {
+    let stmt = client
+        .prepare_cached(
+            r#"
+SELECT member_id, member_name,
+GREATEST(stats_last_update, coordinates_last_update, skills_last_update,
+quests_last_update, inventory_last_update, equipment_last_update, bank_last_update,
+rune_pouch_last_update, interacting_last_update, seed_vault_last_update, diary_vars_last_update,
+collection_log_last_update) as last_updated
+FROM groupironman.members WHERE group_id=$1
+ORDER BY member_name
+"#,
+        )
+        .await?;
+    let rows = client.query(&stmt, &[&group_id]).await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(PlayerInfo {
+            member_id: row.try_get("member_id")?,
+            member_name: row.try_get("member_name")?,
+            last_updated: row.try_get("last_updated").ok(),
+        });
+    }
+    Ok(result)
 }
 
 pub async fn update_schema(client: &mut Client) -> Result<(), ApiError> {

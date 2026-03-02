@@ -3,7 +3,7 @@ use crate::db;
 use crate::error::ApiError;
 use crate::models::{AdminChangePasswordRequest, ChangeRoleRequest, CreateUserRequest};
 use actix_web::{delete, get, post, put, web, Error, HttpResponse};
-use deadpool_postgres::Pool;
+use deadpool_postgres::{Client, Pool};
 
 fn hash_password(password: &str) -> Result<String, ApiError> {
     bcrypt::hash(password, 12).map_err(ApiError::BcryptError)
@@ -263,4 +263,46 @@ pub async fn get_audit_log(
     let client = db_pool.get().await.map_err(ApiError::PoolError)?;
     let entries = db::get_audit_log(&client, 200).await?;
     Ok(HttpResponse::Ok().json(entries))
+}
+
+#[get("/players")]
+pub async fn list_players(
+    _admin: AdminAuthenticated,
+    db_pool: web::Data<Pool>,
+    group_id: web::Data<i64>,
+) -> Result<HttpResponse, Error> {
+    let client = db_pool.get().await.map_err(ApiError::PoolError)?;
+    let players = db::list_players(&client, **group_id).await?;
+    Ok(HttpResponse::Ok().json(players))
+}
+
+#[derive(serde::Deserialize)]
+pub struct DeletePlayerPath {
+    pub member_name: String,
+}
+
+#[delete("/players/{member_name}")]
+pub async fn delete_player(
+    admin: AdminAuthenticated,
+    path: web::Path<DeletePlayerPath>,
+    db_pool: web::Data<Pool>,
+    group_id: web::Data<i64>,
+) -> Result<HttpResponse, Error> {
+    let member_name = &path.member_name;
+    let mut client: Client = db_pool.get().await.map_err(ApiError::PoolError)?;
+    db::delete_group_member(&mut client, **group_id, member_name).await?;
+
+    db::write_audit_log(
+        &client,
+        Some(admin.user.user_id),
+        "player_deleted",
+        None,
+        Some(&format!(
+            "Admin '{}' deleted player '{}'",
+            admin.user.username, member_name
+        )),
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({"ok": true})))
 }

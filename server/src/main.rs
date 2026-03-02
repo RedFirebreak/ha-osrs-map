@@ -73,7 +73,9 @@ async fn main() -> std::io::Result<()> {
             .service(admin_routes::enable_user)
             .service(admin_routes::kick_user)
             .service(admin_routes::admin_change_password)
-            .service(admin_routes::get_audit_log);
+            .service(admin_routes::get_audit_log)
+            .service(admin_routes::list_players)
+            .service(admin_routes::delete_player);
 
         // Session-protected group data routes
         let session_group_scope = web::scope("/api/group")

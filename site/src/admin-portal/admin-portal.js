@@ -29,6 +29,7 @@ export class AdminPortal extends BaseElement {
     api.setSession(session.sessionToken, session.username, session.role);
     this.render();
     this.loadUsers();
+    this.loadPlayers();
     this.loadAuditLog();
     this.setupCreateUser();
   }
@@ -197,6 +198,78 @@ export class AdminPortal extends BaseElement {
         `;
       })
       .join("");
+  }
+
+  async loadPlayers() {
+    try {
+      const response = await api.adminListPlayers();
+      if (!response.ok) return;
+      const players = await response.json();
+      this.renderPlayers(players);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  renderPlayers(players) {
+    const container = this.querySelector(".admin-portal__player-list");
+    if (!container) return;
+
+    if (players.length === 0) {
+      container.innerHTML = "<p>No players yet. Players appear here when devices are paired and data is received.</p>";
+      return;
+    }
+
+    container.innerHTML = players
+      .map((player) => {
+        const lastUpdated = player.last_updated
+          ? new Date(player.last_updated).toLocaleString()
+          : "Never";
+        const isStale = player.last_updated
+          ? (Date.now() - new Date(player.last_updated).getTime()) > 7 * 24 * 60 * 60 * 1000
+          : true;
+        const staleBadge = isStale
+          ? `<span class="admin-portal__badge admin-portal__badge--disabled">stale</span>`
+          : "";
+
+        return `
+          <div class="admin-portal__player-row">
+            <div class="admin-portal__player-info">
+              <strong>${escapeHtml(player.member_name)}</strong>
+              ${staleBadge}
+              <span style="font-size:0.8rem;color:#999">Last updated: ${escapeHtml(lastUpdated)}</span>
+            </div>
+            <div class="admin-portal__player-actions">
+              <button class="men-button" data-player-action="delete" data-player-name="${escapeHtml(player.member_name)}">Remove</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    container.querySelectorAll("button[data-player-action]").forEach((btn) => {
+      btn.addEventListener("click", () => this.handlePlayerAction(btn));
+    });
+  }
+
+  async handlePlayerAction(btn) {
+    const action = btn.dataset.playerAction;
+    const playerName = btn.dataset.playerName;
+
+    if (action === "delete") {
+      if (!confirm(`Are you sure you want to remove player '${playerName}'? All player data will be permanently deleted.`)) {
+        return;
+      }
+      try {
+        const response = await api.adminDeletePlayer(playerName);
+        if (response && response.ok) {
+          this.loadPlayers();
+          this.loadAuditLog();
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
   }
 }
 

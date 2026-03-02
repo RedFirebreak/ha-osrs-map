@@ -391,6 +391,23 @@ class Api {
     });
     return response;
   }
+
+  async adminListPlayers() {
+    const response = await fetch(`${this.baseUrl}/admin/players`, {
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async adminDeletePlayer(memberName) {
+    const response = await fetch(`${this.baseUrl}/admin/players/${encodeURIComponent(memberName)}`, {
+      method: "DELETE",
+      headers: this.authHeaders(),
+      credentials: "same-origin",
+    });
+    return response;
+  }
 }
 
 const api = new Api();

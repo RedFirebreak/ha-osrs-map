@@ -205,6 +205,13 @@ pub struct AuditLogEntry {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Serialize)]
+pub struct PlayerInfo {
+    pub member_id: i64,
+    pub member_name: String,
+    pub last_updated: Option<DateTime<Utc>>,
+}
+
 #[derive(Deserialize)]
 pub struct SetupRequest {
     pub username: String,

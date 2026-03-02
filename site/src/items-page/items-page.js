@@ -22,9 +22,11 @@ export class ItemsPage extends BaseElement {
 
     let playerOptions = `<option value="@ALL">All Players</option>`;
     for (const member of members) {
-      playerOptions += `<option value="${member.name}" ${member.name === selected ? "selected" : ""}>${
-        member.name
-      }</option>`;
+      if (!member.inactive) {
+        playerOptions += `<option value="${member.name}" ${member.name === selected ? "selected" : ""}>${
+          member.name
+        }</option>`;
+      }
     }
 
     playerFilter.innerHTML = playerOptions;
