@@ -2,9 +2,10 @@ use crate::config::Config;
 use crate::db;
 use crate::error::ApiError;
 use crate::models::{
-    DiscordCallbackQuery, DiscordEnabledResponse, DiscordGuild, DiscordTokenResponse, DiscordUser,
+    DiscordCallbackRequest, DiscordEnabledResponse, DiscordGuild, DiscordTokenResponse,
+    DiscordUser, LoginResponse,
 };
-use actix_web::{cookie, get, web, Error, HttpResponse};
+use actix_web::{cookie, get, post, web, Error, HttpResponse};
 use chrono::{Duration, Utc};
 use deadpool_postgres::Pool;
 
@@ -39,9 +40,9 @@ pub async fn discord_enabled(config: web::Data<Config>) -> Result<HttpResponse, 
     }))
 }
 
-#[get("/discord/callback")]
+#[post("/discord/callback")]
 pub async fn discord_callback(
-    query: web::Query<DiscordCallbackQuery>,
+    body: web::Json<DiscordCallbackRequest>,
     db_pool: web::Data<Pool>,
     config: web::Data<Config>,
 ) -> Result<HttpResponse, Error> {
@@ -57,7 +58,7 @@ pub async fn discord_callback(
             ("client_id", config.discord.client_id.as_str()),
             ("client_secret", config.discord.client_secret.as_str()),
             ("grant_type", "authorization_code"),
-            ("code", &query.code),
+            ("code", &body.code),
             ("redirect_uri", config.discord.redirect_uri.as_str()),
         ])
         .send()
@@ -94,7 +95,7 @@ pub async fn discord_callback(
     let db_client = db_pool.get().await.map_err(ApiError::PoolError)?;
 
     // Check if Discord user already has a linked account
-    if let Some((user_id, username, _role, enabled)) =
+    if let Some((user_id, username, role, enabled)) =
         db::get_user_by_discord_id(&db_client, &discord_user.id).await?
     {
         if !enabled {
@@ -126,10 +127,12 @@ pub async fn discord_callback(
             .max_age(cookie::time::Duration::hours(SESSION_DURATION_HOURS))
             .finish();
 
-        return Ok(HttpResponse::Found()
-            .cookie(cookie)
-            .append_header(("Location", "/group"))
-            .finish());
+        return Ok(HttpResponse::Ok().cookie(cookie).json(LoginResponse {
+            ok: true,
+            session_token: session_id,
+            role,
+            username,
+        }));
     }
 
     // No existing link - check if auto-registration is allowed
@@ -242,8 +245,10 @@ pub async fn discord_callback(
         .max_age(cookie::time::Duration::hours(SESSION_DURATION_HOURS))
         .finish();
 
-    Ok(HttpResponse::Found()
-        .cookie(cookie)
-        .append_header(("Location", "/group"))
-        .finish())
+    Ok(HttpResponse::Ok().cookie(cookie).json(LoginResponse {
+        ok: true,
+        session_token: session_id,
+        role: "member".to_string(),
+        username,
+    }))
 }

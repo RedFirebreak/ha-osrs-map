@@ -304,11 +304,8 @@ pub struct IngestPayload {
 // --- Discord OAuth models ---
 
 #[derive(Deserialize)]
-pub struct DiscordCallbackQuery {
+pub struct DiscordCallbackRequest {
     pub code: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub state: Option<String>,
 }
 
 #[derive(Deserialize)]

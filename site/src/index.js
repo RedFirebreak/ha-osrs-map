@@ -32,6 +32,7 @@ import "./men-input/men-input.js";
 import "./edit-member/edit-member.js";
 import "./loading-screen/loading-screen.js";
 import "./login-page/login-page.js";
+import "./discord-callback/discord-callback.js";
 import "./logout-page/logout-page.js";
 import "./demo-page/demo-page.js";
 import "./social-links/social-links.js";

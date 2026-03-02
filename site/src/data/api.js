@@ -317,6 +317,20 @@ class Api {
     return response.json();
   }
 
+  get discordCallbackUrl() {
+    return `${this.baseUrl}/auth/discord/callback`;
+  }
+
+  async discordCallback(code) {
+    const response = await fetch(this.discordCallbackUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ code }),
+    });
+    return response;
+  }
+
   // --- Admin API methods ---
 
   async adminListUsers() {
