@@ -1445,7 +1445,7 @@ pub async fn get_device_user_id(
         .query_one(&stmt, &[&token_hash])
         .await
         .map_err(ApiError::DeviceAuthError)?;
-    Ok(row.try_get::<_, Option<i64>>(0).unwrap_or(None))
+    Ok(row.try_get::<_, Option<i64>>(0)?)
 }
 
 pub async fn upsert_user_player_link(
