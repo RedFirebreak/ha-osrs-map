@@ -2,6 +2,8 @@ import { BaseElement } from "../base-element/base-element";
 import { api } from "../data/api";
 import { storage } from "../data/storage";
 
+const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
@@ -226,7 +228,7 @@ export class AdminPortal extends BaseElement {
           ? new Date(player.last_updated).toLocaleString()
           : "Never";
         const isStale = player.last_updated
-          ? (Date.now() - new Date(player.last_updated).getTime()) > 7 * 24 * 60 * 60 * 1000
+          ? (Date.now() - new Date(player.last_updated).getTime()) > STALE_THRESHOLD_MS
           : true;
         const staleBadge = isStale
           ? `<span class="admin-portal__badge admin-portal__badge--disabled">stale</span>`
