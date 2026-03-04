@@ -31,6 +31,41 @@ app.use(expressWinston.logger({
   metaField: null
 }));
 app.use(compression());
+
+// Inject environment variables into index.html
+const fs = require('fs');
+const indexHtmlPath = path.join(__dirname, '../public/index.html');
+
+const getSiteConfig = () => {
+  const siteTitle = process.env.SITE_TITLE || 'OSRS Group Tracker';
+  const siteName = process.env.SITE_NAME || 'GroupIron.men';
+  return { siteTitle, siteName };
+};
+
+const injectConfig = (html) => {
+  const { siteTitle, siteName } = getSiteConfig();
+  const configScript = `<script>window.siteConfig = { title: '${siteName}', pageTitle: '${siteTitle}' };</script>`;
+  const modifiedHtml = html.replace('</head>', `${configScript}</head>`);
+  const titleModifiedHtml = modifiedHtml.replace('<title>OSRS Group Tracker</title>', `<title>${siteTitle}</title>`);
+  return titleModifiedHtml;
+};
+
+// Middleware to intercept index.html requests and inject config
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path === '/index.html') {
+    fs.readFile(indexHtmlPath, 'utf8', (err, data) => {
+      if (err) {
+        res.status(500).send('Error loading page');
+        return;
+      }
+      res.set('Content-Type', 'text/html');
+      res.send(injectConfig(data));
+    });
+  } else {
+    next();
+  }
+});
+
 app.use(express.static('public'));
 app.use(express.static('.'));
 

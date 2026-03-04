@@ -5,11 +5,13 @@ services:
       dockerfile: Dockerfile
     environment:
       - HOST_URL=${HOST_URL}
+      - SITE_TITLE=${SITE_TITLE:-OSRS Group Tracker}
+      - SITE_NAME=${SITE_NAME:-GroupIron.men}
     restart: always
-    container_name: group-ironmen-tracker-frontend
+    depends_on:
+      - "osrs_tracker_backend"
     ports:
       - 4000:4000
-
   osrs_tracker_backend:
     build:
       context: ./server
@@ -29,7 +31,6 @@ services:
     restart: always
     depends_on:
       - "postgres"
-    container_name: group-ironmen-tracker-backend
     ports:
       - 5000:8080
 
