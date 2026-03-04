@@ -28,9 +28,11 @@ regex = "1.11.2"
 arc-swap = "1.7.1"
 reqwest = { version = "0.12.23", features = ["json"] }
 mimalloc = "0.1.48"
+urlencoding = "2.1.3"
 futures-util = "0.3.31"
 rand = "0.9"
 bcrypt = "0.18.0"
+dotenvy = "0.15.7"
 
 [profile.dev]
 opt-level = 0

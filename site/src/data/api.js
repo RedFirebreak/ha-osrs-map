@@ -74,6 +74,10 @@ class Api {
     return `${this.baseUrl}/auth/me`;
   }
 
+  get discordEnabledUrl() {
+    return `${this.baseUrl}/auth/discord/enabled`;
+  }
+
   // Auth headers using session cookie + Bearer fallback
   authHeaders() {
     const headers = {};
@@ -304,6 +308,25 @@ class Api {
     const response = await fetch(this.meUrl, {
       headers: this.authHeaders(),
       credentials: "same-origin",
+    });
+    return response;
+  }
+
+  async getDiscordEnabled() {
+    const response = await fetch(this.discordEnabledUrl);
+    return response.json();
+  }
+
+  get discordCallbackUrl() {
+    return `${this.baseUrl}/auth/discord/callback`;
+  }
+
+  async discordCallback(code) {
+    const response = await fetch(this.discordCallbackUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ code }),
     });
     return response;
   }

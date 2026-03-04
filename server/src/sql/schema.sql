@@ -33,3 +33,12 @@ CREATE TABLE IF NOT EXISTS groupironman.audit_log (
     details TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS groupironman.discord_users (
+    discord_id TEXT NOT NULL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES groupironman.users(user_id) ON DELETE CASCADE,
+    discord_username TEXT NOT NULL,
+    linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_discord_users_user_id ON groupironman.discord_users(user_id);
