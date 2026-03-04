@@ -5,6 +5,7 @@ use crate::auth_middleware::{Authenticated, SessionAuthenticated};
 use crate::models::{
     GroupMember, IngestPayload, PairCodeResponse, PairRequest, PairResponse,
 };
+use crate::token_lockout::TokenLockout;
 use crate::validators::valid_name;
 use actix_web::{post, web, Error, HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
@@ -238,6 +239,7 @@ pub async fn ingest(
     body: web::Json<IngestPayload>,
     db_pool: web::Data<Pool>,
     sender: web::Data<mpsc::Sender<GroupMember>>,
+    lockout: web::Data<TokenLockout>,
 ) -> Result<HttpResponse, Error> {
     let token = match req.headers().get("X-Osrs-Token") {
         Some(header) => match header.to_str() {
@@ -251,10 +253,27 @@ pub async fn ingest(
         }
     };
 
+    let hashed_token = token_hash(token, DEVICE_TOKEN_SALT);
+
+    // Early deny: if this token was recently rejected, return 429 immediately
+    // without touching the database.
+    if let Some(remaining) = lockout.check_blocked(&hashed_token) {
+        let retry_after = remaining.as_secs().max(1);
+        return Ok(HttpResponse::TooManyRequests()
+            .insert_header(("Retry-After", retry_after.to_string()))
+            .body("Too many failed attempts. Try again later."));
+    }
+
     let client: Client = db_pool.get().await.map_err(ApiError::PoolError)?;
 
-    let hashed_token = token_hash(token, DEVICE_TOKEN_SALT);
-    let group_id = db::get_device_group(&client, &hashed_token).await?;
+    let group_id = match db::get_device_group(&client, &hashed_token).await {
+        Ok(id) => id,
+        Err(e @ ApiError::DeviceAuthError(_)) => {
+            lockout.block(&hashed_token);
+            return Err(e.into());
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     let player_name = &body.player.name;
     if !valid_name(player_name) {

@@ -13,6 +13,7 @@ mod unauthed;
 mod validators;
 mod device;
 mod update_batcher;
+mod token_lockout;
 use crate::auth_middleware::{AuthenticateMiddlewareFactory, SessionMiddlewareFactory};
 use crate::config::Config;
 
@@ -49,6 +50,10 @@ async fn main() -> std::io::Result<()> {
     tokio::spawn(async move {
         update_batcher::background_worker(update_batcher_pool, rx).await;
     });
+
+    let token_lockout = web::Data::new(
+        token_lockout::TokenLockout::new(std::time::Duration::from_secs(15 * 60)),
+    );
 
     HttpServer::new(move || {
         // Public auth endpoints (no session required)
@@ -148,6 +153,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(config.clone()))
             .app_data(web::Data::new(tx.clone()))
             .app_data(web::Data::new(group_id))
+            .app_data(token_lockout.clone())
             .service(auth_scope)
             .service(session_auth_scope)
             .service(admin_scope)
