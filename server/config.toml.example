@@ -1,0 +1,27 @@
+# PostgreSQL Database Configuration
+[pg]
+user = "postgres"
+password = "postgres"
+host = "localhost"
+port = 5432
+dbname = "osrs_tracker"
+pool.max_size = 16
+
+# Logger Configuration (optional)
+[logger]
+level = "Info"  # Options: Info, Warn, Error
+
+# HCaptcha Configuration (optional - set enabled = true to use)
+[hcaptcha]
+enabled = false
+sitekey = ""
+secret = ""
+
+# Discord OAuth Configuration (optional - set enabled = true to use)
+[discord]
+enabled = false
+client_id = ""
+client_secret = ""
+redirect_uri = "http://localhost:8000/api/auth/discord/callback"
+auto_registration = false
+autoreg_servers = []

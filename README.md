@@ -88,12 +88,25 @@ You'll need the [RuneLite HomeAssistant Data Exporter](https://github.com/xXD4rk
 3. Configure the backend:
    ```bash
    cd server
+   
+   # Copy and edit the config file
    cp config.toml.example config.toml
    # Edit config.toml with your database credentials
+   
+   # Create a secret file for token hashing (use a random string)
+   # On Linux/Mac:
+   echo "your-super-secret-random-string-here" > secret
+   
+   # On Windows (PowerShell):
+   # "your-super-secret-random-string-here" | Out-File -FilePath secret -NoNewline
+   
+   # Run the server
    cargo run --release
    ```
 
    The API will be available at `http://localhost:8000`
+
+   **Note**: The `secret` file should contain a random string used for cryptographic hashing. Keep it secure and never commit it to version control.
 
 **Frontend Setup:**
 
