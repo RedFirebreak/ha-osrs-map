@@ -4,6 +4,7 @@ const expressWinston = require('express-winston');
 const path = require('path');
 const compression = require('compression');
 const axios = require('axios');
+const crypto = require('crypto');
 const app = express();
 const port = 4000;
 
@@ -69,10 +70,45 @@ app.use((req, res, next) => {
 app.use(express.static('public'));
 app.use(express.static('.'));
 
+// Rate limit tracking per token (hashed)
+const rateLimitTracking = new Map(); // Map of hashedToken -> { resetTime, retryAfter }
+
+// Hash token for privacy/security
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+// Clean up old rate limit entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [hashedToken, data] of rateLimitTracking.entries()) {
+    if (data.resetTime < now) {
+      rateLimitTracking.delete(hashedToken);
+    }
+  }
+}, 10000); // Clean up every 10 seconds
+
 if (backend) {
   console.log(`Backend for api calls: ${backend}`);
   app.use(express.json());
   app.use('/api*', (req, res, next) => {
+    const token = req.headers['x-osrs-token'];
+    const now = Date.now();
+    
+    // If token exists, check rate limit
+    if (token) {
+      const hashedToken = hashToken(token);
+      const rateLimitData = rateLimitTracking.get(hashedToken);
+      
+      if (rateLimitData && rateLimitData.resetTime > now) {
+        console.log(`Token ${hashedToken.substring(0, 8)}... is rate limited. Blocked request to ${req.originalUrl}`);
+        res.status(429);
+        res.set('Retry-After', rateLimitData.retryAfter);
+        res.json({ error: 'Too Many Requests - please wait before retrying' });
+        return;
+      }
+    }
+    
     const forwardUrl = backend + req.originalUrl;
     console.log(`Calling backend ${forwardUrl}`);
     const headers = Object.assign({}, req.headers);
@@ -91,7 +127,21 @@ if (backend) {
       response.data.pipe(res);
     }).catch((error) => {
       if (error.response) {
-        res.status(error.response.status);
+        const statusCode = error.response.status;
+        
+        // Track rate limit errors per token
+        if (statusCode === 429 && token) {
+          const hashedToken = hashToken(token);
+          const retryAfter = error.response.headers['retry-after'] || '60';
+          const retryAfterSeconds = parseInt(retryAfter) || 60;
+          rateLimitTracking.set(hashedToken, {
+            resetTime: now + (retryAfterSeconds * 1000),
+            retryAfter: retryAfter
+          });
+          console.log(`Token ${hashedToken.substring(0, 8)}... rate limited by backend. Tracking until ${new Date(now + (retryAfterSeconds * 1000)).toISOString()}`);
+        }
+        
+        res.status(statusCode);
         res.set(error.response.headers);
         error.response.data.pipe(res);
       } else if (error.request) {
