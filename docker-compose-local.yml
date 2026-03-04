@@ -1,0 +1,48 @@
+services:
+  group-ironmen-tracker-frontend:
+    build:
+      context: ./site
+      dockerfile: Dockerfile
+    environment:
+      - HOST_URL=${HOST_URL}
+    restart: always
+    container_name: group-ironmen-tracker-frontend
+    ports:
+      - 4000:4000
+
+  group-ironmen-tracker-backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      - PG_USER=${PG_USER}
+      - PG_PASSWORD=${PG_PASSWORD}
+      - PG_HOST=${PG_HOST}
+      - PG_PORT=${PG_PORT}
+      - PG_DB=${PG_DB}
+      - BACKEND_SECRET=${BACKEND_SECRET}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
+      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI:-}
+      - DISCORD_AUTO_REGISTRATION=${DISCORD_AUTO_REGISTRATION:-false}
+      - DISCORD_AUTOREG_SERVERS=${DISCORD_AUTOREG_SERVERS:-}
+    restart: always
+    depends_on:
+      - "postgres"
+    container_name: group-ironmen-tracker-backend
+    ports:
+      - 5000:8080
+
+  postgres:
+    image: postgres:17
+    restart: always
+    container_name: group-ironmen-tracker-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: clan_db
+    ports:
+      - 5432:5432
+    volumes:
+      - ./pg-data:/var/lib/postgresql/data
+      - ./server/src/sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql

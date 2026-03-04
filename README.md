@@ -1,78 +1,145 @@
-# OSRS Group Tracker Frontend and Backend
+# OSRS Group Tracker
 
-This repo is for the frontend website and backend for tracking OSRS players in a group.
+![Rust](https://img.shields.io/badge/Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-336791?style=for-the-badge&logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 
-This application tracks information about your OSRS players and sends it to a server where you and your group members can view it. Currently it tracks:
+Real-time tracking and group coordination tool for Old School RuneScape players.
 
-* Inventory, equipment, and bank
-* Skill XP
-* World position, viewable in an interactive map
-* HP, prayer, energy, and world as well as showing inactivity
-* Quest state - completed, finished, in progress
+Track your group members' activities in real-time: inventory, equipment, bank, skill XP, world position, HP/Prayer/Energy, quests, and more!
 
-## Features
+## 📦 What This Tracks
 
-* **Device Pairing** — Use a 5-digit pairing code to link RuneLite clients to your group
-* **Auto-add Members** — New players are automatically added to the group on first data ingestion
-* **Token Auth** — Paired devices use hashed tokens for secure data submission
-* **Generic JSON Ingestion** — Accepts standard RuneLite plugin JSON payloads (not limited to Group Ironman)
+- 🎒 **Inventory, Equipment & Bank** — See what items your team has
+- 📊 **Skill Experience** — Monitor XP gains across all skills
+- 🗺️ **World Position** — Interactive map showing player locations
+- ❤️ **Stats** — HP, Prayer, Energy, and world indicators with inactivity detection
+- 📜 **Quest Progress** — Completed, finished, and in-progress quests
 
-## Setup Flow
+## ✨ Features
+
+- **Device Pairing** — Simple 5-digit pairing codes to link RuneLite clients to your group
+- **Auto-add Members** — New players automatically appear on first data submission
+- **Secure Token Auth** — Paired devices use hashed tokens for secure communication
+- **Generic JSON Ingestion** — Works with standard RuneLite plugin payloads (not limited to Group Ironman)
+- **Interactive Dashboard** — Real-time web interface to view group activity
+
+## 🎮 Companion Plugin
+
+You'll need the [RuneLite HomeAssistant Data Exporter](https://github.com/xXD4rkDragonXx/runelite-homeassistant-data-exporter) plugin to send data to this tracker.
+
+## 🚀 Setup
+
+### Option 1: Docker (Recommended)
+
+**Prerequisites:**
+- Docker & Docker Compose
+
+**Steps:**
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/ha-osrs-map.git
+   cd ha-osrs-map
+   ```
+
+2. Start the full stack:
+   ```bash
+   docker-compose -f docker-compose-local.yml up -d
+   ```
+
+3. Access the application:
+   - **Website**: http://localhost:3000
+   - **API**: http://localhost:8000
+
+4. Create your group:
+   - Go to the website and create a new group
+   - You'll receive a group token and pairing code
+   - Use the pairing code in your RuneLite plugin
+
+### Option 2: Manual Setup (Development)
+
+**Prerequisites:**
+- Rust 1.70+ (for backend)
+- Node.js 18+ (for frontend)
+- PostgreSQL 14+
+
+**Backend Setup:**
+
+1. Install Rust:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+2. Set up PostgreSQL:
+   ```bash
+   # On Windows with PostgreSQL installed
+   createdb osrs_tracker
+   
+   # Or use Docker for just the database:
+   docker run -d \
+     -e POSTGRES_PASSWORD=postgres \
+     -e POSTGRES_DB=osrs_tracker \
+     -p 5432:5432 \
+     postgres:14
+   ```
+
+3. Configure the backend:
+   ```bash
+   cd server
+   cp config.toml.example config.toml
+   # Edit config.toml with your database credentials
+   cargo run --release
+   ```
+
+   The API will be available at `http://localhost:8000`
+
+**Frontend Setup:**
+
+1. Install dependencies:
+   ```bash
+   cd site
+   npm install
+   ```
+
+2. Start the development server:
+   ```bash
+   npm run start:local-api
+   ```
+
+   The website will be available at `http://localhost:3000`
+
+## 🔄 Usage Flow
 
 1. **Create a group** via the website (pick a group name, get a group token)
 2. **Generate a pairing code**: `POST /api/group/{group_name}/pair/code` (requires group token in `Authorization` header)
-3. **Pair a device**: `POST /api/osrs-data/pair` with `{ "code": "12345" }` — returns a device token
-4. **Ingest data**: `POST /api/osrs-data/events` with `X-Osrs-Token` header containing the device token
-5. Players are auto-added to the group on first successful ingestion
+3. **Install the RuneLite plugin** and pair using your 5-digit code
+4. **Pair a device**: `POST /api/osrs-data/pair` with `{ "code": "12345" }` — returns a device token
+5. **Start tracking**: Plugin automatically sends data using the device token
+6. Players are auto-added to the group on first successful data submission
 
-# Self-hosting
+## 🏗️ Project Structure
 
-It is possible to self-host the frontend and backend rather than use [groupiron.men](https://groupiron.men).
-
-In the plugin settings, put the URL that you are hosting the website on. Leaving it blank will default to https://groupiron.men.
-
-![](https://i.imgur.com/0JFD7D5.png)
-
-
-## With Docker
-
-Prerequisites
-
-* Docker
-* docker-compose
-
-### With docker-compose
-
-Copy the `docker-compose.yml`, `.env.example`, and `schema.sql` (exists in `server/src/sql`) files onto your server.
-
-Copy the contents of `.env.example` into a new file named `.env` in the same directory and fill it with your secrets.
-
-The `.env` file explains what should go into each secret.
-
-The `docker-compose.yml` has a line that takes the path to the `schema.sql`. Make sure to update this to the relative or absolute path of the file on your server.
-
-After you have set up the `.env` file and `schema.sql` path, you can run `docker-compose up -d` and this will spin up both the frontend and backend. The backend should be available on port 5000 and the frontend on port 4000, although these can be changed in the docker-compose file.
-
-### Without docker-compose (untested)
-
-If you are not using the docker-compose, then you will have to set up the Postgres database and pass secrets in using Docker environment variables. See below in the [Without Docker](#without-docker) section for how to set up the database.
-
-You can then run the following to run the image for the frontend, adding the values of the environment variables:
-
-```sh
-docker run -d -e HOST_URL= chrisleeeee/group-ironmen-tracker-frontend
+```
+├── server/          # Rust backend (Actix-web + PostgreSQL)
+├── site/            # TypeScript/JavaScript frontend (Webpack)
+├── cache/           # Data processing utilities
+├── backup/          # Backup scripts
+└── docker-compose*.yml  # Docker orchestration
 ```
 
-Same thing for the backend:
+## 📝 License
 
-```sh
-docker run -d -e PG_USER= -e PG_PASSWORD= -e PG_HOST= -e PG_PORT=  -e PG_DB= -e BACKEND_SECRET= chrisleeeee/group-ironmen-tracker-backend
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-Check `.env.example` for an explanation on what the value of each environment variable should be.
+## 🤝 Contributing
 
-Once it's running, the backend should be available on port 8080 and the frontend on port 4000.
+Contributions are welcome! Feel free to open issues and pull requests.
 
-## Without Docker
+## 🙏 Credits
 
-To be filled...
+- Built for the OSRS community
+- The source code of this frontend/backend by [christoabrown](https://github.com/christoabrown/group-ironmen)
+- RuneLite companion plugin by [xXD4rkDragonXx](https://github.com/xXD4rkDragonXx)
+
