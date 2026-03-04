@@ -535,7 +535,9 @@ pub async fn get_device_group(
 ) -> Result<i64, ApiError> {
     let stmt = client
         .prepare_cached(
-            "SELECT group_id FROM groupironman.devices WHERE token_hash=$1",
+            "SELECT d.group_id FROM groupironman.devices d \
+             LEFT JOIN groupironman.users u ON d.user_id = u.user_id \
+             WHERE d.token_hash=$1 AND (d.user_id IS NULL OR u.enabled = TRUE)",
         )
         .await?;
     let row = client
