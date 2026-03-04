@@ -128,17 +128,29 @@ fn get_update_statement(size: usize) -> String {
     let statement = format!(r#"
 UPDATE groupironman.members as a SET
   stats = COALESCE(b.stats, a.stats),
+  stats_last_update = CASE WHEN b.stats IS NOT NULL THEN NOW() ELSE a.stats_last_update END,
   coordinates = COALESCE(b.coordinates, a.coordinates),
+  coordinates_last_update = CASE WHEN b.coordinates IS NOT NULL THEN NOW() ELSE a.coordinates_last_update END,
   skills = COALESCE(b.skills, a.skills),
+  skills_last_update = CASE WHEN b.skills IS NOT NULL THEN NOW() ELSE a.skills_last_update END,
   quests = COALESCE(b.quests, a.quests),
+  quests_last_update = CASE WHEN b.quests IS NOT NULL THEN NOW() ELSE a.quests_last_update END,
   inventory = COALESCE(b.inventory, a.inventory),
+  inventory_last_update = CASE WHEN b.inventory IS NOT NULL THEN NOW() ELSE a.inventory_last_update END,
   equipment = COALESCE(b.equipment, a.equipment),
+  equipment_last_update = CASE WHEN b.equipment IS NOT NULL THEN NOW() ELSE a.equipment_last_update END,
   bank = COALESCE(b.bank, a.bank),
+  bank_last_update = CASE WHEN b.bank IS NOT NULL THEN NOW() ELSE a.bank_last_update END,
   rune_pouch = COALESCE(b.rune_pouch, a.rune_pouch),
+  rune_pouch_last_update = CASE WHEN b.rune_pouch IS NOT NULL THEN NOW() ELSE a.rune_pouch_last_update END,
   interacting = COALESCE(b.interacting, a.interacting),
+  interacting_last_update = CASE WHEN b.interacting IS NOT NULL THEN NOW() ELSE a.interacting_last_update END,
   seed_vault = COALESCE(b.seed_vault, a.seed_vault),
+  seed_vault_last_update = CASE WHEN b.seed_vault IS NOT NULL THEN NOW() ELSE a.seed_vault_last_update END,
   diary_vars = COALESCE(b.diary_vars, a.diary_vars),
-  collection_log = COALESCE(b.collection_log, a.collection_log)
+  diary_vars_last_update = CASE WHEN b.diary_vars IS NOT NULL THEN NOW() ELSE a.diary_vars_last_update END,
+  collection_log = COALESCE(b.collection_log, a.collection_log),
+  collection_log_last_update = CASE WHEN b.collection_log IS NOT NULL THEN NOW() ELSE a.collection_log_last_update END
 FROM (VALUES {}) AS b(
   group_id,
   member_name,
