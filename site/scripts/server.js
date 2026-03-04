@@ -38,7 +38,7 @@ const indexHtmlPath = path.join(__dirname, '../public/index.html');
 
 const getSiteConfig = () => {
   const siteTitle = process.env.SITE_TITLE || 'OSRS Group Tracker';
-  const siteName = process.env.SITE_NAME || 'GroupIron.men';
+  const siteName = process.env.SITE_NAME || 'OSRS Group Tracker';
   return { siteTitle, siteName };
 };
 

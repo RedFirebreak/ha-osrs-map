@@ -54,7 +54,9 @@ export class LoginPage extends BaseElement {
         if (divider) divider.style.display = "";
         if (discordBtn) {
           discordBtn.style.display = "";
-          discordBtn.href = data.auth_url;
+          this.eventListener(discordBtn, "click", () => {
+            window.location.href = data.auth_url;
+          });
         }
       }
     } catch (e) {
