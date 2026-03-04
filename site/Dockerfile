@@ -1,15 +1,23 @@
 ###############################################
 # Frontend Image
 ###############################################
-FROM node:18-alpine as production-frontend
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
 COPY ["./package.json", "./package-lock.json*", "./"]
-RUN npm install --ignore-scripts
+RUN npm install
 
 COPY . .
-RUN chmod +x /app/scripts/docker-entrypoint.sh
+RUN npm run bundle
 
-ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
-CMD ["npm","run","serve"]
+FROM node:18-alpine
+WORKDIR /app
+
+COPY --from=build /app/public ./public
+COPY --from=build /app/scripts/server.js ./scripts/server.js
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./
+
+EXPOSE 4000
+CMD ["node", "scripts/server.js"]

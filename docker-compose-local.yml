@@ -1,16 +1,18 @@
 services:
-  group-ironmen-tracker-frontend:
+  osrs_tracker_frontend:
     build:
       context: ./site
       dockerfile: Dockerfile
     environment:
       - HOST_URL=${HOST_URL}
+      - SITE_TITLE=${SITE_TITLE:-OSRS Group Tracker}
+      - SITE_NAME=${SITE_NAME:-GroupIron.men}
     restart: always
-    container_name: group-ironmen-tracker-frontend
+    depends_on:
+      - "osrs_tracker_backend"
     ports:
       - 4000:4000
-
-  group-ironmen-tracker-backend:
+  osrs_tracker_backend:
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -29,7 +31,6 @@ services:
     restart: always
     depends_on:
       - "postgres"
-    container_name: group-ironmen-tracker-backend
     ports:
       - 5000:8080
 

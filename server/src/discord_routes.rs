@@ -102,6 +102,50 @@ pub async fn discord_callback(
             return Ok(HttpResponse::Unauthorized().body("Account is disabled"));
         }
 
+        // Check if existing user is still in an allowed Discord server
+        let http_client = reqwest::Client::new();
+        let guilds: Vec<DiscordGuild> = http_client
+            .get(&format!("{}/users/@me/guilds", DISCORD_API_BASE))
+            .header(
+                "Authorization",
+                format!("{} {}", token_data.token_type, token_data.access_token),
+            )
+            .send()
+            .await
+            .map_err(ApiError::ReqwestError)?
+            .json()
+            .await
+            .map_err(ApiError::ReqwestError)?;
+
+        let user_guild_ids: Vec<&str> = guilds.iter().map(|g| g.id.as_str()).collect();
+        let is_in_allowed_server = config
+            .discord
+            .autoreg_servers
+            .iter()
+            .any(|allowed| user_guild_ids.contains(&allowed.as_str()));
+
+        if !is_in_allowed_server {
+            // User is no longer in an allowed Discord server
+            // Revoke their plugin tokens and deny login
+            let _ = db::revoke_user_devices(&db_client, user_id).await;
+            let _ = db::revoke_user_pairing_codes(&db_client, user_id).await;
+
+            db::write_audit_log(
+                &db_client,
+                Some(user_id),
+                "discord_login_failed_not_in_server",
+                Some(user_id),
+                Some(&format!(
+                    "User '{}' attempted to login but is no longer in an allowed Discord server (discord_id: {})",
+                    username, discord_user.id
+                )),
+            )
+            .await?;
+
+            return Ok(HttpResponse::Forbidden()
+                .body("You are no longer a member of the required Discord server."));
+        }
+
         // Existing user - create session and log in
         let _ = db::cleanup_expired_sessions(&db_client).await;
         let session_id = uuid::Uuid::new_v4().hyphenated().to_string();

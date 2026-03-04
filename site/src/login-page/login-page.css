@@ -30,25 +30,19 @@ login-page {
 
 .login__discord-divider {
   margin-top: 1em;
-  text-align: center;
-  color: #aaa;
+  margin-bottom: 1em;
+  height: 1px;
+  background: #000;
+  width: 100%;
+}
+
+.login__discord-icon {
+  height: 20px;
+  width: 20px;
+  margin-right: 8px;
+  filter: brightness(0) invert(1);
 }
 
 .login__discord-button {
-  display: block;
   margin-top: 0.5em;
-  padding: 6px 16px;
-  text-align: center;
-  text-decoration: none;
-  background-color: #5865F2;
-  color: #fff;
-  cursor: pointer;
-  font-size: 20px;
-  font-family: "rssmall";
-  border: none;
-  border-radius: 4px;
-}
-
-.login__discord-button:hover {
-  background-color: #4752C4;
 }
