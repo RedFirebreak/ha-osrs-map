@@ -35,10 +35,20 @@ login-page {
 }
 
 .login__discord-button {
+  display: block;
   margin-top: 0.5em;
+  padding: 6px 16px;
   text-align: center;
   text-decoration: none;
   background-color: #5865F2;
   color: #fff;
   cursor: pointer;
+  font-size: 20px;
+  font-family: "rssmall";
+  border: none;
+  border-radius: 4px;
+}
+
+.login__discord-button:hover {
+  background-color: #4752C4;
 }

@@ -58,7 +58,7 @@ export class LoginPage extends BaseElement {
         }
       }
     } catch (e) {
-      // Discord not available, hide button
+      console.warn("Discord auth check failed:", e);
     }
   }
 
