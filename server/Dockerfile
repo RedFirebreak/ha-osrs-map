@@ -1,7 +1,7 @@
 ###############################################
 # Backend Image
 ###############################################
-FROM rust:1.89 as builder
+FROM rust:1.82 as builder
 WORKDIR /app
 COPY src ./src
 COPY Cargo.toml .
@@ -17,6 +17,7 @@ RUN rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/server ./
 COPY --from=builder /app/collection_log_info.json ./
 COPY ./docker-entrypoint.sh ./
+RUN chmod +x /app/docker-entrypoint.sh
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/app/server"]

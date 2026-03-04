@@ -44,14 +44,20 @@ You'll need the [RuneLite HomeAssistant Data Exporter](https://github.com/xXD4rk
    cd ha-osrs-map
    ```
 
-2. Start the full stack:
+2. Create environment file:
+   ```bash
+   cp .env.example .env
+   # Edit .env if needed (defaults work for local development)
+   ```
+
+3. Start the full stack:
    ```bash
    docker-compose -f docker-compose-local.yml up -d
    ```
 
-3. Access the application:
-   - **Website**: http://localhost:3000
-   - **API**: http://localhost:8000
+4. Access the application:
+   - **Website**: http://localhost:4000
+   - **API**: http://localhost:5000
 
 4. Create your group:
    - Go to the website and create a new group
@@ -121,7 +127,7 @@ You'll need the [RuneLite HomeAssistant Data Exporter](https://github.com/xXD4rk
    npm run start:local-api
    ```
 
-   The website will be available at `http://localhost:3000`
+   The website will be available at `http://localhost:4000`
 
 ## 🔄 Usage Flow
 
