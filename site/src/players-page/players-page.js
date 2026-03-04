@@ -3,6 +3,12 @@ import { utility } from "../utility";
 
 const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 function relativeTime(date) {
   if (!date) return "Never";
   const now = Date.now();
@@ -16,7 +22,7 @@ function relativeTime(date) {
   if (diffSec < 60) return "just now";
   if (diffMin < 60) return `${diffMin} min ago`;
   if (diffHr < 24) return `${diffHr} hour${diffHr !== 1 ? "s" : ""} ago`;
-  if (diffDay < 30) return `${diffDay} day${diffDay !== 1 ? "s" : ""} ago`;
+  if (diffDay < 30) return `${diffDay} day${diffDay !== 1 ? "s" : ""} ago`; // ~30 days/month approximation
   const diffMonth = Math.floor(diffDay / 30);
   return `${diffMonth} month${diffMonth !== 1 ? "s" : ""} ago`;
 }
@@ -83,24 +89,26 @@ export class PlayersPage extends BaseElement {
     let html = "";
 
     for (const member of online) {
+      const safeName = escapeHtml(member.name);
       html += `
         <div class="players-page__player players-page__player--online rsborder rsbackground">
           <div class="players-page__player-header">
-            <player-icon player-name="${member.name}"></player-icon>
-            <span class="players-page__player-name">${member.name}</span>
+            <player-icon player-name="${safeName}"></player-icon>
+            <span class="players-page__player-name">${safeName}</span>
             <span class="players-page__badge players-page__badge--online">Online</span>
             <span class="players-page__last-data" data-last-updated="${member.lastUpdated ? member.lastUpdated.toISOString() : ""}">Last data: ${relativeTime(member.lastUpdated)}</span>
           </div>
-          <player-panel class="rsborder rsbackground" player-name="${member.name}"></player-panel>
+          <player-panel class="rsborder rsbackground" player-name="${safeName}"></player-panel>
         </div>`;
     }
 
     for (const member of offline) {
+      const safeName = escapeHtml(member.name);
       html += `
         <div class="players-page__player players-page__player--offline rsborder rsbackground">
           <div class="players-page__player-header">
-            <player-icon player-name="${member.name}"></player-icon>
-            <span class="players-page__player-name">${member.name}</span>
+            <player-icon player-name="${safeName}"></player-icon>
+            <span class="players-page__player-name">${safeName}</span>
             <span class="players-page__badge players-page__badge--offline">Offline</span>
             <span class="players-page__last-data" data-last-updated="${member.lastUpdated ? member.lastUpdated.toISOString() : ""}">Last data: ${relativeTime(member.lastUpdated)}</span>
           </div>
