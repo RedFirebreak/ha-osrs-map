@@ -68,7 +68,8 @@ export class GroupData {
       updatedAttributes.has("bank") ||
       updatedAttributes.has("equipment") ||
       updatedAttributes.has("runePouch") ||
-      updatedAttributes.has("seedVault");
+      updatedAttributes.has("seedVault") ||
+      inactiveStatusChanged;
 
     const encounteredItemIds = new Set();
     if (receivedItemData) {
@@ -191,6 +192,7 @@ export class GroupData {
   itemQuantities(itemId) {
     let result = {};
     for (const member of this.members.values()) {
+      if (member.inactive) continue;
       result[member.name] = member.totalItemQuantity(itemId);
     }
 
@@ -212,6 +214,7 @@ export class GroupData {
   *allItems() {
     const yieldedIds = new Set();
     for (const member of this.members.values()) {
+      if (member.inactive) continue;
       for (const item of member.allItems()) {
         if (!yieldedIds.has(item.id)) {
           yieldedIds.add(item.id);
