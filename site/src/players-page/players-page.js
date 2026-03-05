@@ -53,7 +53,7 @@ export class PlayersPage extends BaseElement {
     this.searchInput = this.querySelector(".players-page__search");
 
     this.eventListener(this.querySelector(".players-page__filters"), "click", this.handleFilterClick.bind(this));
-    this.eventListener(this.searchInput, "input", this.handleSearchInput.bind(this), { passive: true });
+    this.eventListener(this.searchInput, "input", this.handleSearchInput.bind(this));
 
     this.subscribe("members-updated", this.handleUpdatedMembers.bind(this));
     this.refreshInterval = setInterval(() => this.updateRelativeTimes(), 30000);
@@ -156,7 +156,7 @@ export class PlayersPage extends BaseElement {
     // Update count
     const shownOnline = showOnline ? online.length : 0;
     const shownOffline = showOffline ? offline.length : 0;
-    this.countEl.textContent = `${shownOnline + shownOffline} player${shownOnline + shownOffline !== 1 ? "s" : ""} (${online.length} online)`;
+    this.countEl.textContent = `${shownOnline + shownOffline} player${shownOnline + shownOffline !== 1 ? "s" : ""} (${shownOnline} online)`;
   }
 
   updateRelativeTimes() {
