@@ -1,0 +1,111 @@
+.players-page .authed-section {
+  display: block !important;
+  overflow-y: auto;
+}
+
+.players-page .authed-section__main-content {
+  overflow: hidden;
+}
+
+.players-page side-panel {
+  display: none;
+}
+
+players-page {
+  display: block;
+  padding: 12px;
+  color: white;
+}
+
+.players-page__heading {
+  margin: 0 0 12px 0;
+  font-size: 1.3rem;
+}
+
+.players-page__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.players-page__filters input[type="text"] {
+  width: 200px;
+}
+
+.players-page__filter-btn {
+  font-size: 0.9rem;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.players-page__filter-btn.active {
+  outline: 1px solid rgb(200, 200, 200);
+}
+
+.players-page__count {
+  font-size: 0.85rem;
+  color: #999;
+  margin-left: auto;
+}
+
+.players-page__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.players-page__player {
+  width: 300px;
+  box-sizing: border-box;
+  padding: 8px;
+}
+
+.players-page__player-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.players-page__player-name {
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.players-page__badge {
+  font-size: 0.8rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: bold;
+}
+
+.players-page__badge--online {
+  background: #3a7d44;
+  color: #fff;
+}
+
+.players-page__badge--offline {
+  background: #8b0000;
+  color: #fff;
+}
+
+.players-page__last-data {
+  font-size: 0.8rem;
+  color: #999;
+  margin-left: auto;
+}
+
+.players-page__player--offline {
+  opacity: 0.7;
+}
+
+.players-page__player player-panel {
+  margin: 0;
+  width: 100%;
+  border: none;
+  background: none;
+}

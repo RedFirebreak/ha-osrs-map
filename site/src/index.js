@@ -42,7 +42,7 @@ import "./player-interacting/player-interacting.js";
 import "./skills-graphs/skills-graphs.js";
 import "./skill-graph/skill-graph.js";
 import "./confirm-dialog/confirm-dialog.js";
-import "./panels-page/panels-page.js";
+import "./players-page/players-page.js";
 import "./diary-dialog/diary-dialog.js";
 import "./player-diaries/player-diaries.js";
 import "./diary-completion/diary-completion.js";
