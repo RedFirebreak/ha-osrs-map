@@ -36,6 +36,8 @@ function isOnline(member) {
 export class PlayersPage extends BaseElement {
   constructor() {
     super();
+    this.statusFilter = "all";
+    this.nameFilter = "";
   }
 
   html() {
@@ -47,6 +49,12 @@ export class PlayersPage extends BaseElement {
     document.body.classList.add("players-page");
     this.render();
     this.listEl = this.querySelector(".players-page__list");
+    this.countEl = this.querySelector(".players-page__count");
+    this.searchInput = this.querySelector(".players-page__search");
+
+    this.eventListener(this.querySelector(".players-page__filters"), "click", this.handleFilterClick.bind(this));
+    this.eventListener(this.searchInput, "input", this.handleSearchInput.bind(this), { passive: true });
+
     this.subscribe("members-updated", this.handleUpdatedMembers.bind(this));
     this.refreshInterval = setInterval(() => this.updateRelativeTimes(), 30000);
   }
@@ -58,6 +66,22 @@ export class PlayersPage extends BaseElement {
       clearInterval(this.refreshInterval);
       this.refreshInterval = null;
     }
+  }
+
+  handleFilterClick(e) {
+    const btn = e.target.closest("[data-filter]");
+    if (!btn) return;
+    this.statusFilter = btn.getAttribute("data-filter");
+
+    this.querySelectorAll(".players-page__filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    this.renderPlayerList();
+  }
+
+  handleSearchInput() {
+    this.nameFilter = this.searchInput.value.trim().toLowerCase();
+    this.renderPlayerList();
   }
 
   handleUpdatedMembers(members) {
@@ -72,6 +96,11 @@ export class PlayersPage extends BaseElement {
     const offline = [];
 
     for (const member of this.members) {
+      // Apply name filter
+      if (this.nameFilter && !member.name.toLowerCase().includes(this.nameFilter)) {
+        continue;
+      }
+
       if (isOnline(member)) {
         online.push(member);
       } else {
@@ -86,36 +115,48 @@ export class PlayersPage extends BaseElement {
       return bTime - aTime;
     });
 
+    const showOnline = this.statusFilter === "all" || this.statusFilter === "online";
+    const showOffline = this.statusFilter === "all" || this.statusFilter === "offline";
+
     let html = "";
 
-    for (const member of online) {
-      const safeName = escapeHtml(member.name);
-      html += `
-        <div class="players-page__player players-page__player--online rsborder rsbackground">
-          <div class="players-page__player-header">
-            <player-icon player-name="${safeName}"></player-icon>
-            <span class="players-page__player-name">${safeName}</span>
-            <span class="players-page__badge players-page__badge--online">Online</span>
-            <span class="players-page__last-data" data-last-updated="${member.lastUpdated ? member.lastUpdated.toISOString() : ""}">Last data: ${relativeTime(member.lastUpdated)}</span>
-          </div>
-          <player-panel class="rsborder rsbackground" player-name="${safeName}"></player-panel>
-        </div>`;
+    if (showOnline) {
+      for (const member of online) {
+        const safeName = escapeHtml(member.name);
+        html += `
+          <div class="players-page__player players-page__player--online rsborder rsbackground">
+            <div class="players-page__player-header">
+              <player-icon player-name="${safeName}"></player-icon>
+              <span class="players-page__player-name">${safeName}</span>
+              <span class="players-page__badge players-page__badge--online">Online</span>
+              <span class="players-page__last-data" data-last-updated="${member.lastUpdated ? member.lastUpdated.toISOString() : ""}">Last data: ${relativeTime(member.lastUpdated)}</span>
+            </div>
+            <player-panel class="rsborder rsbackground" player-name="${safeName}"></player-panel>
+          </div>`;
+      }
     }
 
-    for (const member of offline) {
-      const safeName = escapeHtml(member.name);
-      html += `
-        <div class="players-page__player players-page__player--offline rsborder rsbackground">
-          <div class="players-page__player-header">
-            <player-icon player-name="${safeName}"></player-icon>
-            <span class="players-page__player-name">${safeName}</span>
-            <span class="players-page__badge players-page__badge--offline">Offline</span>
-            <span class="players-page__last-data" data-last-updated="${member.lastUpdated ? member.lastUpdated.toISOString() : ""}">Last data: ${relativeTime(member.lastUpdated)}</span>
-          </div>
-        </div>`;
+    if (showOffline) {
+      for (const member of offline) {
+        const safeName = escapeHtml(member.name);
+        html += `
+          <div class="players-page__player players-page__player--offline rsborder rsbackground">
+            <div class="players-page__player-header">
+              <player-icon player-name="${safeName}"></player-icon>
+              <span class="players-page__player-name">${safeName}</span>
+              <span class="players-page__badge players-page__badge--offline">Offline</span>
+              <span class="players-page__last-data" data-last-updated="${member.lastUpdated ? member.lastUpdated.toISOString() : ""}">Last data: ${relativeTime(member.lastUpdated)}</span>
+            </div>
+          </div>`;
+      }
     }
 
     this.listEl.innerHTML = html;
+
+    // Update count
+    const shownOnline = showOnline ? online.length : 0;
+    const shownOffline = showOffline ? offline.length : 0;
+    this.countEl.textContent = `${shownOnline + shownOffline} player${shownOnline + shownOffline !== 1 ? "s" : ""} (${online.length} online)`;
   }
 
   updateRelativeTimes() {
