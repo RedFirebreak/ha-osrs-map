@@ -71,7 +71,8 @@ app.use(express.static('public'));
 app.use(express.static('.'));
 
 // Rate limit tracking per token (hashed)
-const rateLimitTracking = new Map(); // Map of hashedToken -> { resetTime, retryAfter }
+const rateLimitTracking = new Map(); // Map of hashedToken -> { resetTime, retryAfter, testing }
+const MAX_RATE_LIMIT_SECONDS = 300; // 5 minutes max
 
 // Hash token for privacy/security
 function hashToken(token) {
@@ -100,12 +101,18 @@ if (backend) {
       const hashedToken = hashToken(token);
       const rateLimitData = rateLimitTracking.get(hashedToken);
       
-      if (rateLimitData && rateLimitData.resetTime > now) {
-        console.log(`Token ${hashedToken.substring(0, 8)}... is rate limited. Blocked request to ${req.originalUrl}`);
-        res.status(429);
-        res.set('Retry-After', rateLimitData.retryAfter);
-        res.json({ error: 'Too Many Requests - please wait before retrying' });
-        return;
+      if (rateLimitData) {
+        if (rateLimitData.resetTime > now) {
+          console.log(`Token ${hashedToken.substring(0, 8)}... is rate limited. Blocked request to ${req.originalUrl}`);
+          res.status(429);
+          res.set('Retry-After', rateLimitData.retryAfter);
+          res.json({ error: 'Too Many Requests - please wait before retrying' });
+          return;
+        } else if (!rateLimitData.testing) {
+          // Rate limit expired – let one request through as a test
+          rateLimitData.testing = true;
+          console.log(`Token ${hashedToken.substring(0, 8)}... rate limit expired. Testing with request to ${req.originalUrl}`);
+        }
       }
     }
     
@@ -122,6 +129,15 @@ if (backend) {
       headers,
       data: req.body
     }).then((response) => {
+      // If we were testing and the request succeeded, clear rate limit tracking
+      if (token) {
+        const hashedToken = hashToken(token);
+        const rateLimitData = rateLimitTracking.get(hashedToken);
+        if (rateLimitData && rateLimitData.testing) {
+          rateLimitTracking.delete(hashedToken);
+          console.log(`Token ${hashedToken.substring(0, 8)}... test passed. Clearing rate limit.`);
+        }
+      }
       res.status(response.status);
       res.set(response.headers);
       response.data.pipe(res);
@@ -133,12 +149,27 @@ if (backend) {
         if (statusCode === 429 && token) {
           const hashedToken = hashToken(token);
           const retryAfter = error.response.headers['retry-after'] || '60';
-          const retryAfterSeconds = parseInt(retryAfter) || 60;
+          const retryAfterSeconds = Math.min(parseInt(retryAfter) || 60, MAX_RATE_LIMIT_SECONDS);
           rateLimitTracking.set(hashedToken, {
             resetTime: now + (retryAfterSeconds * 1000),
-            retryAfter: retryAfter
+            retryAfter: String(retryAfterSeconds),
+            testing: false
           });
           console.log(`Token ${hashedToken.substring(0, 8)}... rate limited by backend. Tracking until ${new Date(now + (retryAfterSeconds * 1000)).toISOString()}`);
+        }
+        
+        // Re-apply rate limit if test request got 401 (still unauthorized)
+        if (statusCode === 401 && token) {
+          const hashedToken = hashToken(token);
+          const rateLimitData = rateLimitTracking.get(hashedToken);
+          if (rateLimitData && rateLimitData.testing) {
+            rateLimitTracking.set(hashedToken, {
+              resetTime: now + (MAX_RATE_LIMIT_SECONDS * 1000),
+              retryAfter: String(MAX_RATE_LIMIT_SECONDS),
+              testing: false
+            });
+            console.log(`Token ${hashedToken.substring(0, 8)}... still unauthorized after test. Re-applying ${MAX_RATE_LIMIT_SECONDS}s rate limit.`);
+          }
         }
         
         res.status(statusCode);
