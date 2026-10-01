@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IconCache } from "../src/canvas-map/icon-cache";
-import { KIND_COLORS, drawEventMarkers } from "../src/canvas-map/event-marker-renderer";
+import { drawEventMarkers } from "../src/canvas-map/event-marker-renderer";
+import { KIND_COLORS } from "../src/data/event-view";
 import { MARKER_RADIUS, MARKER_RADIUS_COMPACT } from "../src/canvas-map/event-markers";
 import { DEATH_ICON_URL } from "../src/data/event-view";
 

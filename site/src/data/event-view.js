@@ -9,13 +9,30 @@ import { clockTime, escapeHtml, formatGp, relativeTime } from "./format";
 // the filters let it through, how much of a fuss it deserves, its icon and
 // its words.
 
-/** Which hub events show on the map, and under which filter. */
+/**
+ * Which hub events show on the map, under which filter, and in which colour
+ * where there is no icon to show. A new kind, or a new type in a kind, is added
+ * here, and nowhere else on the site, with two things that can't read this
+ * table:
+ * - the server reads a trail's events by type (`LOOT_TYPES` and `OTHER_TYPES`
+ *   in server/src/hub/profile.rs), so a new type goes there too;
+ * - the replay's ticks and the toasts are coloured in CSS
+ *   (trail-scrubber.css, event-toasts.css), by the kind's key.
+ */
 export const EVENT_KINDS = [
-  { key: "loot", label: "Loot", types: ["loot", "pk_loot"] },
-  { key: "level", label: "Levels", types: ["level_up"] },
-  { key: "death", label: "Deaths", types: ["death"] },
-  { key: "other", label: "Other", types: ["collection_log", "achievement_diary", "combat_task", "superior_spawn"] },
+  { key: "loot", label: "Loot", color: "#ffd700", types: ["loot", "pk_loot"] },
+  { key: "level", label: "Levels", color: "#5bd45b", types: ["level_up"] },
+  { key: "death", label: "Deaths", color: "#e0403a", types: ["death"] },
+  {
+    key: "other",
+    label: "Other",
+    color: "#f2f2f2",
+    types: ["collection_log", "achievement_diary", "combat_task", "superior_spawn"],
+  },
 ];
+
+/** The colour of each kind, by its key. */
+export const KIND_COLORS = Object.fromEntries(EVENT_KINDS.map((kind) => [kind.key, kind.color]));
 
 export const MIN_LOOT_OPTIONS = [
   [0, "Any drop"],

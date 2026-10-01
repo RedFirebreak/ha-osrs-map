@@ -12,7 +12,7 @@ import { api } from "../src/data/api";
 import { defaultEventFilters } from "../src/data/event-view";
 import { groupData } from "../src/data/group-data";
 import { tooltipManager } from "../src/rs-tooltip/tooltip-manager";
-import { LiveEvents } from "../src/data/live-events";
+import { LiveEvents, newsTracker } from "../src/data/live-events";
 import { pubsub } from "../src/data/pubsub";
 import { selection } from "../src/data/selection";
 import { sparklinePoints } from "../src/player-profile-view/player-profile-view";
@@ -407,6 +407,23 @@ describe("events on the map", () => {
       expect(map.camera.x.target).toBe(map.gamePositionToCameraCenter(3000, 3001)[0]);
       expect(map.focusEvent("nope")).toBe(false);
     });
+
+    it("show where the player is now for an event that is no longer on the map", () => {
+      groupData.members = new Map([["Alice", {}]]);
+      const selected = [];
+      pubsub.subscribe("player-selected", (value) => selected.push(value));
+
+      // As a click on its toast asks, after the marker's half hour is up.
+      map.goToEvent(drop("gone", 3 * 3600000));
+      expect(selected).toEqual([
+        { name: "Alice", follow: false },
+        { name: "Alice", follow: true },
+      ]);
+
+      // And nobody is selected for a player the map doesn't know.
+      map.goToEvent(drop("stranger", 5000, { member: "Nobody" }));
+      expect(selected).toHaveLength(2);
+    });
   });
 
   it("draw nothing on a map no event has reached", () => {
@@ -438,6 +455,17 @@ describe("live events", () => {
 
     live.apply([]);
     expect(published).toHaveLength(2);
+  });
+
+  it("tells a subscriber which calls bring news: not the first it hears, nor a feed that starts over", () => {
+    const bringsNews = newsTracker();
+    // The last poll, played back to whoever subscribes.
+    expect(bringsNews({ initial: false })).toBe(false);
+    expect(bringsNews({ initial: false })).toBe(true);
+    expect(bringsNews({ initial: true })).toBe(false);
+    expect(bringsNews({ initial: false })).toBe(true);
+    // Each subscriber keeps its own count.
+    expect(newsTracker()({ initial: false })).toBe(false);
   });
 });
 

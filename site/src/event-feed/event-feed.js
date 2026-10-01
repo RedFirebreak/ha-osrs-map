@@ -4,6 +4,7 @@ import { describeEvent, hubErrorMessage } from "../data/hub-format";
 import { relativeTime } from "../data/format";
 import { eventIconUrl, eventPlace } from "../data/event-view";
 import { selection } from "../data/selection";
+import { newsTracker } from "../data/live-events";
 import { groupData } from "../data/group-data";
 
 const EVENT_FILTERS = [
@@ -38,7 +39,7 @@ export class EventFeed extends BaseElement {
   connectedCallback() {
     super.connectedCallback();
     this.playerName = this.getAttribute("player-name");
-    this.receivedLive = false;
+    this.liveEventsBringNews = newsTracker();
     this.limit = parseInt(this.getAttribute("limit") || "100", 10);
     this.render();
     this.list = this.querySelector(".event-feed__list");
@@ -98,11 +99,10 @@ export class EventFeed extends BaseElement {
     }
   }
 
-  handleLiveEvents({ events, added }) {
-    this.events = events;
-    // The first call replays the last poll; its events aren't new to this feed.
-    this.newIds = this.receivedLive ? new Set(added.map((event) => event.id)) : new Set();
-    this.receivedLive = true;
+  handleLiveEvents(feed) {
+    this.events = feed.events;
+    // Only what is news is marked as new in this feed.
+    this.newIds = new Set(this.liveEventsBringNews(feed) ? feed.added.map((event) => event.id) : []);
     this.renderEvents();
   }
 

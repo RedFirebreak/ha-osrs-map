@@ -1,7 +1,7 @@
 import { BaseElement } from "../base-element/base-element";
 import { api } from "../data/api";
-import { groupData } from "../data/group-data";
 import { selection } from "../data/selection";
+import { newsTracker } from "../data/live-events";
 import { colorForName } from "../data/player-colors";
 import {
   EVENT_KINDS,
@@ -100,10 +100,10 @@ export class MapPage extends BaseElement {
       document.body.classList.toggle("roster-open")
     );
     this.eventListener(this.eventControls, "change", this.handleEventFilterChange.bind(this));
-    this.eventListener(this.toasts, "toast-activated", (event) => this.focusEvent(event.detail.event));
+    this.eventListener(this.toasts, "toast-activated", (event) => this.worldMap.goToEvent(event.detail.event));
     this.subscribe("features", this.handleFeatures.bind(this));
     this.subscribe("trails-changed", () => this.loadTrails());
-    this.receivedLive = false;
+    this.liveEventsBringNews = newsTracker();
     this.subscribe("live-events", this.handleLiveEvents.bind(this));
     this.subscribe("player-selected", () => document.body.classList.remove("roster-open"));
   }
@@ -363,34 +363,20 @@ export class MapPage extends BaseElement {
     this.loadTrailEvents();
   }
 
-  handleLiveEvents({ events, added, initial }) {
-    this.liveEvents = events;
-    // The first call replays the last poll (or is the first load): no news.
-    const first = !this.receivedLive || initial;
-    const news = first ? [] : added;
-    this.receivedLive = true;
-    if (first || news.some((event) => selection.hasTrail(event.member))) this.showTrailEvents();
+  handleLiveEvents(feed) {
+    this.liveEvents = feed.events;
+    const bringsNews = this.liveEventsBringNews(feed);
+    const news = bringsNews ? feed.added : [];
+    // All of them when the feed starts (over), and after that what is new on a trail that is shown.
+    if (!bringsNews || news.some((event) => selection.hasTrail(event.member))) this.showTrailEvents();
     // The map puts the events on itself; this page announces them.
     const now = api.serverNow();
     for (const event of news) {
-      const member = groupData.members.get(event.member);
       // What turns up late (the tab was hidden, say) is no news any more.
       if (this.filters.toasts && eventPasses(event, this.filters) && eventIsFresh(event, now)) {
-        this.toasts.show(event, { color: member?.lightColor || colorForName(event.member).light });
+        this.toasts.show(event, { color: colorForName(event.member).light });
       }
     }
-  }
-
-  /**
-   * Brings an event into view and selects its player, as a click on its toast
-   * asks. An event that isn't on the map shows where its player is now.
-   */
-  focusEvent(event) {
-    const known = groupData.members.has(event.member);
-    // Selected first: the map keeps the event clear of the drawer that opens.
-    if (known) selection.select(event.member, { follow: false });
-    const shown = this.worldMap.focusEvent(event.id);
-    if (known && !shown) selection.select(event.member, { follow: true });
   }
 }
 customElements.define("map-page", MapPage);
