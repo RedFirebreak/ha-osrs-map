@@ -264,7 +264,7 @@ describe("events on the map", () => {
   });
 
   it("have the map drawn again while they ring, and now and then while they fade", () => {
-    const requested = vi.spyOn(map, "requestEventFrame");
+    const requested = vi.spyOn(map, "requestFrameIn");
     map.handleLiveEvents({ events: [], added: [], initial: true });
     map.drawEvents();
     expect(requested).not.toHaveBeenCalled();
@@ -400,6 +400,21 @@ describe("events on the map", () => {
       map.goToEvent(drop("stranger", 5000, { member: "Nobody" }));
       expect(selected).toHaveLength(2);
     });
+  });
+
+  it("is drawn again for whoever asks for it soonest", () => {
+    map.requestFrameIn(EVENT_WAKE_MS);
+    map.requestFrameIn(EVENT_FRAME_MS);
+    // A later one doesn't put off the frame that was asked for.
+    map.requestFrameIn(EVENT_WAKE_MS);
+    map.updateRequested = 0;
+    vi.advanceTimersByTime(EVENT_FRAME_MS);
+    expect(map.updateRequested).toBe(1);
+
+    // One timer: nothing more comes of the requests it replaced.
+    map.updateRequested = 0;
+    vi.advanceTimersByTime(EVENT_WAKE_MS);
+    expect(map.updateRequested).toBe(0);
   });
 
   it("draw nothing on a map no event has reached", () => {

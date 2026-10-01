@@ -127,10 +127,8 @@ export class CanvasMap extends BaseElement {
       window.cancelAnimationFrame(this.frameRequestId);
       this.frameRequestId = null;
     }
-    window.clearTimeout(this.trailFrameTimer);
-    this.trailFrameTimer = null;
-    window.clearTimeout(this.eventFrameTimer);
-    this.eventFrameTimer = null;
+    window.clearTimeout(this.frameTimer);
+    this.frameTimer = null;
     this.hideMapLinkTooltip();
     this.hidePlayerTooltip();
     this.hideEventTooltip();
@@ -389,6 +387,22 @@ export class CanvasMap extends BaseElement {
     this.updateRequested = 1;
   }
 
+  /**
+   * Has the map drawn again in `ms`, for what moves or fades on it without
+   * anything else happening. Whoever asks for the soonest gets it; the others
+   * ask again when the map is drawn.
+   */
+  requestFrameIn(ms) {
+    const at = performance.now() + ms;
+    if (this.frameTimer && this.frameTimerAt <= at) return;
+    window.clearTimeout(this.frameTimer);
+    this.frameTimerAt = at;
+    this.frameTimer = window.setTimeout(() => {
+      this.frameTimer = null;
+      this.requestUpdate();
+    }, ms);
+  }
+
   parseIntKeys(obj) {
     const result = {};
     for (const key of Object.keys(obj)) {
@@ -609,7 +623,7 @@ export class CanvasMap extends BaseElement {
       this.drawLocations();
       this.drawMapAreaLabels(!isPanningABigDistance);
       this.drawMapLinks();
-      if (this.drawTrails()) this.requestTrailFrame();
+      if (this.drawTrails()) this.requestFrameIn(TRAIL_FRAME_MS);
       this.drawCursorTile();
       this.drawPlayers();
       this.drawEvents();
@@ -756,15 +770,6 @@ export class CanvasMap extends BaseElement {
   drawTrails() {
     if (!this.trailLayer.names().length) return false;
     return this.trailLayer.draw(this.ctx, this.viewport(), this.selectedName);
-  }
-
-  /** Asks for the next frame of a trail's animation, a little later. */
-  requestTrailFrame() {
-    if (this.trailFrameTimer) return;
-    this.trailFrameTimer = window.setTimeout(() => {
-      this.trailFrameTimer = null;
-      this.requestUpdate();
-    }, TRAIL_FRAME_MS);
   }
 
   /** The trail point under a client position, if any: `{name, index, point}`. */
@@ -1117,7 +1122,7 @@ export class CanvasMap extends BaseElement {
     const { items, nextMs } = layoutMarkers(markers, view);
     drawEventMarkers(this.ctx, items, { icons: this.eventIcons });
     this.renderedEvents = items;
-    if (nextMs !== null) this.requestEventFrame(nextMs);
+    if (nextMs !== null) this.requestFrameIn(nextMs);
   }
 
   /** The drawn event (or stack of events) under a client position, if any; see layoutMarkers. */
@@ -1177,18 +1182,6 @@ export class CanvasMap extends BaseElement {
       if (shift) this.camera.x.goTo(this.camera.x.target + (shift * DRAWER_PX) / 2, 400);
     }
     return true;
-  }
-
-  /** Asks for the map to be drawn again in a while, for the sake of the events on it. */
-  requestEventFrame(ms) {
-    const at = performance.now() + ms;
-    if (this.eventFrameTimer && this.eventFrameAt <= at) return;
-    window.clearTimeout(this.eventFrameTimer);
-    this.eventFrameAt = at;
-    this.eventFrameTimer = window.setTimeout(() => {
-      this.eventFrameTimer = null;
-      this.requestUpdate();
-    }, ms);
   }
 
   drawGameTiles(positions, fillColor, strokeColor) {
