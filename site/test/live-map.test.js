@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Animation } from "../src/canvas-map/animation";
 
 vi.mock("../src/rs-tooltip/tooltip-manager", () => ({
   tooltipManager: { showTooltip: vi.fn(), hideTooltip: vi.fn() },
 }));
 
 import { CanvasMap } from "../src/canvas-map/canvas-map";
+import { centerOn, createMap as createBareMap } from "./helpers/map";
 import { EVENT_FRAME_MS, EVENT_MARKER_MS, EVENT_WAKE_MS } from "../src/canvas-map/event-markers";
 import { EVENT_PLACES_KEY } from "../src/canvas-map/event-places";
 import { api } from "../src/data/api";
@@ -17,27 +17,9 @@ import { pubsub } from "../src/data/pubsub";
 import { selection } from "../src/data/selection";
 import { sparklinePoints } from "../src/player-profile-view/player-profile-view";
 
+/** The shared map, with its own style and class list to look at. */
 function createMap() {
-  const map = new CanvasMap();
-  map.plane = 1;
-  map.tileSize = 256;
-  map.pixelsPerGameTile = 4;
-  map.canvas = { width: 800, height: 600, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
-  map.camera = {
-    x: new Animation({ current: 0, target: 0, progress: 1 }),
-    y: new Animation({ current: 0, target: 0, progress: 1 }),
-    zoom: new Animation({ current: 1, target: 1, progress: 1 }),
-    maxZoom: 6,
-    minZoom: 0.5,
-    isDragging: false,
-  };
-  map.cursor = { x: 0, y: 0, frameX: [0], frameY: [0] };
-  map.touch = {};
-  map.playerMarkers = new Map();
-  map.renderedEvents = [];
-  map.renderedPlayers = [];
-  map.followingPlayer = {};
-  map.coordinatesDisplay = { innerText: "" };
+  const map = createBareMap();
   map.style = {};
   map.classList = { add: vi.fn(), remove: vi.fn() };
   return map;
@@ -156,12 +138,6 @@ describe("events on the map", () => {
     map.playerMarkers.set("Alice", alice);
     centerOn(map, 3000, 3001);
   });
-
-  function centerOn(target, x, y) {
-    const [cx, cy] = target.gamePositionToCameraCenter(x, y);
-    target.camera.x.current = cx;
-    target.camera.y.current = cy;
-  }
 
   it("are placed where they say they happened, or else where the player is", () => {
     map.handleLiveEvents({
