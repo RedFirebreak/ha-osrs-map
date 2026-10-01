@@ -16,7 +16,7 @@ use std::time::Duration;
 /// the response has the `error` the site tells apart (`hubErrorMessage` in
 /// site/src/data/hub-format.js).
 #[derive(Debug)]
-pub enum HistoryError {
+pub(crate) enum HistoryError {
     /// Hub history is switched off on this server.
     Disabled,
     /// The request is wrong, with what to tell whoever sent it.
@@ -96,7 +96,7 @@ pub(crate) fn history_enabled(config: &Config) -> Result<(), HistoryError> {
 /// and the skill graphs with a capital.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Period {
+pub(crate) enum Period {
     #[serde(alias = "Day")]
     Day,
     #[serde(alias = "Week")]
@@ -109,7 +109,7 @@ pub enum Period {
 
 impl Period {
     /// The hub's name for the period, which the cache keys use too.
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Period::Day => "day",
             Period::Week => "week",
@@ -118,7 +118,7 @@ impl Period {
         }
     }
 
-    pub fn days(self) -> i64 {
+    pub(crate) fn days(self) -> i64 {
         match self {
             Period::Day => 1,
             Period::Week => 7,

@@ -18,7 +18,7 @@ use std::time::Duration;
 const LOCATIONS_TTL: Duration = Duration::from_secs(60);
 const MAX_TRAIL_POINTS: usize = 3000;
 /// Trails requested at once; more lines than this are unreadable anyway.
-pub const MAX_TRAILS: usize = 8;
+pub(crate) const MAX_TRAILS: usize = 8;
 
 /// The hub keeps one location sample per account per this many seconds.
 const TRAIL_BUCKET_SECS: i64 = 60;
@@ -32,7 +32,7 @@ const FLAG_BOAT: i64 = 1;
 
 /// A stay on one tile, from the hub's `first` sample there to the `last` (unix seconds).
 #[derive(Debug, Clone, PartialEq)]
-pub struct TrailPoint {
+pub(crate) struct TrailPoint {
     pub x: i32,
     pub y: i32,
     pub plane: i32,
@@ -45,7 +45,7 @@ pub struct TrailPoint {
 /// A trail ready to send: `step` is the seconds between the points kept (the
 /// hub's bucket when nothing was thinned); `truncated` when even that was too
 /// much and the oldest points were dropped.
-pub struct BuiltTrail {
+pub(crate) struct BuiltTrail {
     pub points: Vec<TrailPoint>,
     pub step: i64,
     pub truncated: bool,
@@ -74,7 +74,7 @@ fn band(x: i32, y: i32) -> Band {
 }
 
 /// Merges consecutive samples on the same tile into one stay.
-pub fn merge_stays(points: &[HubLocationPoint]) -> Vec<TrailPoint> {
+pub(crate) fn merge_stays(points: &[HubLocationPoint]) -> Vec<TrailPoint> {
     let mut stays: Vec<TrailPoint> = Vec::with_capacity(points.len());
     for point in points {
         let at = point.at.timestamp();
@@ -119,7 +119,7 @@ fn is_break(a: &TrailPoint, b: &TrailPoint) -> bool {
 /// Thins a long trail to at most `max_points`: the first point of every
 /// `step` seconds (on a fixed grid, so the result barely changes as the window
 /// slides), plus the ends of the trail and both sides of every break.
-pub fn thin_trail(points: Vec<TrailPoint>, max_points: usize) -> BuiltTrail {
+pub(crate) fn thin_trail(points: Vec<TrailPoint>, max_points: usize) -> BuiltTrail {
     if points.len() <= max_points || max_points < 2 {
         return BuiltTrail {
             points,
@@ -183,7 +183,7 @@ pub fn thin_trail(points: Vec<TrailPoint>, max_points: usize) -> BuiltTrail {
 /// the tile, `dwell` the seconds since the first one, `flags` bit 0 is "on a
 /// boat"; trailing zeros are left out. `worlds` lists `[point index, world]`
 /// wherever the world changes.
-pub fn trail_json(member: &str, trail: &BuiltTrail) -> Value {
+pub(crate) fn trail_json(member: &str, trail: &BuiltTrail) -> Value {
     let mut worlds: Vec<[i64; 2]> = Vec::new();
     let points: Vec<Vec<i64>> = trail
         .points
@@ -220,7 +220,7 @@ pub fn trail_json(member: &str, trail: &BuiltTrail) -> Value {
 }
 
 #[derive(Deserialize)]
-pub struct TrailsQuery {
+pub(crate) struct TrailsQuery {
     #[serde(default)]
     members: Option<String>,
     #[serde(default)]

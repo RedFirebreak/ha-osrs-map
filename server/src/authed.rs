@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GetGroupDataQuery {
+pub(crate) struct GetGroupDataQuery {
     pub from_time: DateTime<Utc>,
 }
 #[get("/get-group-data")]
@@ -34,7 +34,7 @@ const MAX_SKILL_DATA_MEMBERS: usize = 10;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GetSkillDataQuery {
+pub(crate) struct GetSkillDataQuery {
     pub period: Period,
     /// Comma-separated member names; all members when left out.
     #[serde(default)]

@@ -23,7 +23,7 @@ const PAGE_SIZE: u32 = 200;
 /// An event with the buffer's own increasing sequence number, which the site
 /// passes back as `after` to get only newer events.
 #[derive(Clone, Debug)]
-pub struct BufferedEvent {
+pub(crate) struct BufferedEvent {
     pub seq: u64,
     pub event: HubEvent,
 }
@@ -47,7 +47,7 @@ pub struct EventFilter<'a> {
 
 impl EventBuffer {
     /// Appends events (oldest first), skipping ids already buffered.
-    pub fn extend(&self, events: Vec<HubEvent>) -> usize {
+    pub(crate) fn extend(&self, events: Vec<HubEvent>) -> usize {
         let mut inner = self.0.write().expect("event buffer lock poisoned");
         for event in events {
             if inner
@@ -70,7 +70,7 @@ impl EventBuffer {
     }
 
     /// Newest first.
-    pub fn query(&self, filter: &EventFilter, limit: usize) -> Vec<BufferedEvent> {
+    pub(crate) fn query(&self, filter: &EventFilter, limit: usize) -> Vec<BufferedEvent> {
         let inner = self.0.read().expect("event buffer lock poisoned");
         inner
             .events
@@ -87,14 +87,14 @@ impl EventBuffer {
     }
 
     /// The sequence number of the newest buffered event (0 when empty).
-    pub fn latest_seq(&self) -> u64 {
+    pub(crate) fn latest_seq(&self) -> u64 {
         self.0.read().expect("event buffer lock poisoned").next_seq
     }
 }
 
 /// The parts of the plugin's event object the site shows: where a death or a
 /// superior happened, and the most valuable items and the source of a drop.
-pub fn event_details(event: &HubEvent) -> (Option<Value>, Option<Value>, Option<String>) {
+pub(crate) fn event_details(event: &HubEvent) -> (Option<Value>, Option<Value>, Option<String>) {
     let Some(inner) = event.data.as_ref().and_then(|data| data.get("data")) else {
         return (None, None, None);
     };
@@ -224,7 +224,7 @@ pub(crate) fn event_json(seq: Option<u64>, event: &HubEvent, directory: &HubDire
 }
 
 #[derive(Deserialize)]
-pub struct EventsQuery {
+pub(crate) struct EventsQuery {
     #[serde(default)]
     limit: Option<usize>,
     /// Only events after this `seq` (from an earlier response).

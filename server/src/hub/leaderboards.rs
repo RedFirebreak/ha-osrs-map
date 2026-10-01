@@ -19,7 +19,7 @@ const LOOT_BOARD_TTL: Duration = Duration::from_secs(60);
 const LOOT_BOARD_SIZE: usize = 50;
 
 #[derive(Deserialize)]
-pub struct GainsQuery {
+pub(crate) struct GainsQuery {
     #[serde(default)]
     period: Option<Period>,
 }
@@ -79,7 +79,7 @@ pub async fn get_gains(
 }
 
 #[derive(Deserialize)]
-pub struct LootQuery {
+pub(crate) struct LootQuery {
     #[serde(default)]
     period: Option<Period>,
     #[serde(default)]

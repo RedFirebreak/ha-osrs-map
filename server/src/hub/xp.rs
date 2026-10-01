@@ -29,7 +29,7 @@ fn xp_window(period: Period, now: DateTime<Utc>) -> (DateTime<Utc>, &'static str
 /// Turns the hub's per-skill XP series (points only where XP changed) into the
 /// rows the skill graphs expect: one row per point in time with the XP of all
 /// skills in `SKILL_ORDER`, carrying each skill's last value forward.
-pub fn xp_series_to_rows(series: &[HubXpLine]) -> Vec<AggregateSkillData> {
+pub(crate) fn xp_series_to_rows(series: &[HubXpLine]) -> Vec<AggregateSkillData> {
     let lines: Vec<(usize, &[XpPoint])> = series
         .iter()
         .filter_map(|line| skill_index(&line.skill).map(|index| (index, line.points.as_slice())))
@@ -168,7 +168,7 @@ async fn hub_skill_data(
 
 /// Local skill history with every hub-bound member replaced by the hub's
 /// history. With `members`, only those members (case-insensitive).
-pub async fn merge_skill_data(
+pub(crate) async fn merge_skill_data(
     context: &HubContext,
     period: Period,
     local: GroupSkillData,

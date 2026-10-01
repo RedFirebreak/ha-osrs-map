@@ -12,7 +12,7 @@ use tokio::{task, time};
 
 static GE_PRICES: LazyLock<ArcSwapAny<Arc<String>>> =
     LazyLock::new(|| ArcSwap::from(Arc::new(String::default())));
-pub async fn fetch_latest_prices() -> Result<WikiGEPrices, ApiError> {
+pub(crate) async fn fetch_latest_prices() -> Result<WikiGEPrices, ApiError> {
     http::blocking(|agent| {
         let mut response = agent
             .get("https://prices.runescape.wiki/api/v1/osrs/latest")
@@ -22,7 +22,7 @@ pub async fn fetch_latest_prices() -> Result<WikiGEPrices, ApiError> {
     .await
 }
 
-pub async fn update_ge_prices() -> Result<(), ApiError> {
+pub(crate) async fn update_ge_prices() -> Result<(), ApiError> {
     let wiki_ge_prices = fetch_latest_prices().await?;
     let mut ge_prices: GEPrices = std::collections::HashMap::new();
     for (item_id, wiki_ge_price) in wiki_ge_prices.data {

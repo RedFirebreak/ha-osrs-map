@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use deadpool_postgres::{Client, Transaction};
 use std::collections::{HashMap, HashSet};
 
-pub async fn delete_skills_data_for_member(
+pub(crate) async fn delete_skills_data_for_member(
     transaction: &Transaction<'_>,
     period: AggregatePeriod,
     member_id: i64,
@@ -30,7 +30,7 @@ DELETE FROM groupironman.skills_{} WHERE member_id=$1
     Ok(())
 }
 
-pub async fn get_member_id(
+pub(crate) async fn get_member_id(
     client: &Client,
     group_id: i64,
     member_name: &str,
@@ -48,7 +48,7 @@ pub async fn get_member_id(
     Ok(member_id)
 }
 
-pub async fn delete_group_member(
+pub(crate) async fn delete_group_member(
     client: &mut Client,
     group_id: i64,
     member_name: &str,
@@ -76,7 +76,7 @@ pub async fn delete_group_member(
 
 /// A player counts as online while the hub says so and the sync has confirmed
 /// it recently; if the sync stops (hub down), everyone goes offline.
-pub const ONLINE_CONFIRMATION: &str = "interval '5 minutes'";
+pub(crate) const ONLINE_CONFIRMATION: &str = "interval '5 minutes'";
 
 /// The member columns the sync fills, with their SQL types. Each has a
 /// `<column>_last_update`: when the map stored a new value (see the update
@@ -180,7 +180,7 @@ ORDER BY member_name
     })
 }
 
-pub enum AggregatePeriod {
+pub(crate) enum AggregatePeriod {
     Day,
     Month,
     Year,
@@ -248,7 +248,9 @@ WHERE time < ($1::timestamptz - interval '{1}') AND (member_id, time) NOT IN (
     Ok(())
 }
 
-pub async fn get_last_skills_aggregation(client: &Client) -> Result<DateTime<Utc>, ApiError> {
+pub(crate) async fn get_last_skills_aggregation(
+    client: &Client,
+) -> Result<DateTime<Utc>, ApiError> {
     let last_aggregation_stmt = client
         .prepare_cached(
             r#"
@@ -263,7 +265,7 @@ SELECT last_aggregation FROM groupironman.aggregation_info WHERE type='skills'"#
     Ok(last_aggregation)
 }
 
-pub async fn aggregate_skills(client: &mut Client) -> Result<(), ApiError> {
+pub(crate) async fn aggregate_skills(client: &mut Client) -> Result<(), ApiError> {
     let last_aggregation = get_last_skills_aggregation(client).await?;
 
     let transaction = client.transaction().await?;
@@ -285,7 +287,7 @@ UPDATE groupironman.aggregation_info SET last_aggregation=NOW() WHERE type='skil
     Ok(())
 }
 
-pub async fn apply_skills_retention(client: &mut Client) -> Result<(), ApiError> {
+pub(crate) async fn apply_skills_retention(client: &mut Client) -> Result<(), ApiError> {
     let last_aggregation = get_last_skills_aggregation(client).await?;
 
     let transaction = client.transaction().await?;
@@ -300,7 +302,7 @@ pub async fn apply_skills_retention(client: &mut Client) -> Result<(), ApiError>
     Ok(())
 }
 
-pub async fn get_skills_for_period(
+pub(crate) async fn get_skills_for_period(
     client: &Client,
     group_id: i64,
     period: AggregatePeriod,
@@ -348,7 +350,7 @@ WHERE m.group_id=$1 AND NOT m.hidden
     Ok(member_data.into_values().collect())
 }
 
-pub async fn has_migration_run(client: &mut Client, name: &str) -> Result<bool, ApiError> {
+pub(crate) async fn has_migration_run(client: &mut Client, name: &str) -> Result<bool, ApiError> {
     let count: i64 = client
         .query_one(
             "SELECT COUNT(*) FROM groupironman.migrations WHERE name=$1",
@@ -360,7 +362,10 @@ pub async fn has_migration_run(client: &mut Client, name: &str) -> Result<bool, 
     Ok(count > 0)
 }
 
-pub async fn commit_migration(transaction: &Transaction<'_>, name: &str) -> Result<(), ApiError> {
+pub(crate) async fn commit_migration(
+    transaction: &Transaction<'_>,
+    name: &str,
+) -> Result<(), ApiError> {
     transaction
         .execute(
             "INSERT INTO groupironman.migrations (name, date) VALUES($1, NOW())",
@@ -385,7 +390,10 @@ pub async fn ensure_member_exists(
     Ok(())
 }
 
-pub async fn list_players(client: &Client, group_id: i64) -> Result<Vec<PlayerInfo>, ApiError> {
+pub(crate) async fn list_players(
+    client: &Client,
+    group_id: i64,
+) -> Result<Vec<PlayerInfo>, ApiError> {
     let stmt = client
         .prepare_cached(&format!(
             r#"
@@ -1060,7 +1068,7 @@ CREATE INDEX idx_sessions_discord_id ON groupironman.sessions(discord_id);
 // ===================== Sessions =====================
 
 /// Starts a session for someone the hub just called a member.
-pub async fn create_session(
+pub(crate) async fn create_session(
     client: &Client,
     session_id: &str,
     session: &Session,
@@ -1088,7 +1096,7 @@ pub async fn create_session(
 }
 
 /// Whose session this is; `Unauthorized` when there is none or it has run out.
-pub async fn get_session(client: &Client, session_id: &str) -> Result<Session, ApiError> {
+pub(crate) async fn get_session(client: &Client, session_id: &str) -> Result<Session, ApiError> {
     let stmt = client
         .prepare_cached(
             "SELECT discord_id, name, is_admin FROM groupironman.sessions \
@@ -1106,7 +1114,7 @@ pub async fn get_session(client: &Client, session_id: &str) -> Result<Session, A
     })
 }
 
-pub async fn delete_session(client: &Client, session_id: &str) -> Result<(), ApiError> {
+pub(crate) async fn delete_session(client: &Client, session_id: &str) -> Result<(), ApiError> {
     let stmt = client
         .prepare_cached("DELETE FROM groupironman.sessions WHERE session_id=$1")
         .await?;
@@ -1114,7 +1122,7 @@ pub async fn delete_session(client: &Client, session_id: &str) -> Result<(), Api
     Ok(())
 }
 
-pub async fn cleanup_expired_sessions(client: &Client) -> Result<(), ApiError> {
+pub(crate) async fn cleanup_expired_sessions(client: &Client) -> Result<(), ApiError> {
     let stmt = client
         .prepare_cached("DELETE FROM groupironman.sessions WHERE expires_at <= NOW()")
         .await?;
@@ -1124,7 +1132,7 @@ pub async fn cleanup_expired_sessions(client: &Client) -> Result<(), ApiError> {
 
 /// The Discord ids with a session the hub was last asked about before
 /// `verified_before`, longest ago first, at most `limit` of them.
-pub async fn sessions_to_verify(
+pub(crate) async fn sessions_to_verify(
     client: &Client,
     verified_before: &DateTime<Utc>,
     limit: i64,
@@ -1141,7 +1149,7 @@ pub async fn sessions_to_verify(
 }
 
 /// Notes what the hub says of a member now on every session they have.
-pub async fn refresh_sessions(
+pub(crate) async fn refresh_sessions(
     client: &Client,
     discord_id: &str,
     name: Option<&str>,
@@ -1160,7 +1168,7 @@ pub async fn refresh_sessions(
 }
 
 /// Ends every session of someone who is no longer a member. Returns how many.
-pub async fn delete_sessions_of(client: &Client, discord_id: &str) -> Result<u64, ApiError> {
+pub(crate) async fn delete_sessions_of(client: &Client, discord_id: &str) -> Result<u64, ApiError> {
     let stmt = client
         .prepare_cached("DELETE FROM groupironman.sessions WHERE discord_id=$1")
         .await?;
@@ -1194,7 +1202,7 @@ pub async fn get_or_create_singleton_group(client: &mut Client) -> Result<i64, A
 // ===================== Hub Sync Functions =====================
 
 /// A member row as seen by the hub sync.
-pub struct HubMemberRow {
+pub(crate) struct HubMemberRow {
     pub member_name: String,
     pub hub_account_id: Option<String>,
     /// Hidden by an admin; the sync leaves it alone.
@@ -1209,7 +1217,7 @@ fn hub_member_row(row: &tokio_postgres::Row) -> Result<HubMemberRow, ApiError> {
     })
 }
 
-pub async fn get_member_by_hub_id(
+pub(crate) async fn get_member_by_hub_id(
     client: &Client,
     group_id: i64,
     hub_account_id: &str,
@@ -1228,7 +1236,7 @@ pub async fn get_member_by_hub_id(
 
 /// Finds an existing member for a hub account that is not bound yet: first by
 /// the plugin's account hash (stable across renames), then by name.
-pub async fn find_member_for_hub_account(
+pub(crate) async fn find_member_for_hub_account(
     client: &Client,
     group_id: i64,
     account_hash: Option<&str>,
@@ -1256,7 +1264,7 @@ pub async fn find_member_for_hub_account(
 }
 
 /// Binds a hub account id to a member, taking it away from any other member first.
-pub async fn bind_hub_account(
+pub(crate) async fn bind_hub_account(
     client: &mut Client,
     group_id: i64,
     member_name: &str,
@@ -1284,7 +1292,7 @@ pub async fn bind_hub_account(
 }
 
 /// Records whether the hub reports the member online, and when it was last seen.
-pub async fn set_hub_presence(
+pub(crate) async fn set_hub_presence(
     client: &Client,
     group_id: i64,
     member_name: &str,
@@ -1324,7 +1332,7 @@ pub async fn set_member_hidden(
 }
 
 /// Renames a member that is bound to a hub account.
-pub async fn rename_hub_member(
+pub(crate) async fn rename_hub_member(
     client: &Client,
     group_id: i64,
     original_name: &str,
@@ -1341,7 +1349,7 @@ pub async fn rename_hub_member(
 
 /// Marks bound members whose hub account is no longer visible, and clears the
 /// mark for those that are. Returns the number of orphaned members.
-pub async fn mark_hub_orphans(
+pub(crate) async fn mark_hub_orphans(
     client: &Client,
     group_id: i64,
     visible_ids: &[String],
@@ -1373,7 +1381,7 @@ pub async fn mark_hub_orphans(
 }
 
 /// Member name, hub account id and hidden flag of every member bound to the hub.
-pub async fn get_hub_bindings(
+pub(crate) async fn get_hub_bindings(
     client: &Client,
     group_id: i64,
 ) -> Result<Vec<(String, String, bool)>, ApiError> {

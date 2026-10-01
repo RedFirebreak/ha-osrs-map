@@ -59,9 +59,9 @@ pub struct HubStatus {
     pub bulk_accounts: usize,
 }
 
-pub type SharedHubStatus = Arc<RwLock<HubStatus>>;
+pub(crate) type SharedHubStatus = Arc<RwLock<HubStatus>>;
 
-pub fn record_error(status: &SharedHubStatus, message: String) {
+pub(crate) fn record_error(status: &SharedHubStatus, message: String) {
     if let Ok(mut status) = status.write() {
         status.last_error = Some(message);
         status.last_error_at = Some(Utc::now());
@@ -112,7 +112,7 @@ pub struct HubContext {
 }
 
 /// The request budget to use for a key the hub allows `hub_limit` requests per minute.
-pub fn request_budget(configured: Option<u32>, hub_limit: Option<u32>) -> usize {
+pub(crate) fn request_budget(configured: Option<u32>, hub_limit: Option<u32>) -> usize {
     match (configured, hub_limit) {
         (Some(configured), Some(limit)) => configured.min(limit) as usize,
         (Some(configured), None) => configured as usize,
@@ -123,7 +123,7 @@ pub fn request_budget(configured: Option<u32>, hub_limit: Option<u32>) -> usize 
 
 /// Applies what `/me` says about the key: its kind decides the bulk request
 /// size, its rate limit the request budget.
-pub fn apply_key_info(
+pub(crate) fn apply_key_info(
     me: &HubMe,
     configured_budget: Option<u32>,
     client: &HubClient,

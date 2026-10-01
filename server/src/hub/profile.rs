@@ -44,25 +44,25 @@ const OTHER_TYPES: &str =
 const MAX_GEAR_CHANGES: usize = 50;
 
 #[derive(Deserialize)]
-pub struct PeriodQuery {
+pub(crate) struct PeriodQuery {
     #[serde(default)]
     period: Option<Period>,
 }
 
 #[derive(Deserialize)]
-pub struct DaysQuery {
+pub(crate) struct DaysQuery {
     #[serde(default)]
     days: Option<i64>,
 }
 
 #[derive(Deserialize)]
-pub struct LimitQuery {
+pub(crate) struct LimitQuery {
     #[serde(default)]
     limit: Option<u32>,
 }
 
 #[derive(Deserialize)]
-pub struct TrailEventsQuery {
+pub(crate) struct TrailEventsQuery {
     #[serde(default)]
     days: Option<i64>,
     #[serde(default)]
