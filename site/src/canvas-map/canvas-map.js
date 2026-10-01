@@ -74,7 +74,7 @@ export class CanvasMap extends BaseElement {
     this.subscribe("map-focus", this.handleMapFocus.bind(this));
     this.subscribe("live-events", this.handleLiveEvents.bind(this));
 
-    this.plane = 1;
+    this.floor = 0;
     this.tiles = [new Map(), new Map(), new Map(), new Map()];
     this.tilesInView = [];
     this.previousFrameTime = performance.now();
@@ -300,7 +300,7 @@ export class CanvasMap extends BaseElement {
   handleMapFocus(focus) {
     if (!focus) return;
     this.stopFollowingPlayer();
-    this.showPlane((focus.plane || 0) + 1);
+    this.showFloor(focus.plane || 0);
     if (focus.zoom) {
       this.camera.zoom.goTo(Math.min(Math.max(focus.zoom, this.camera.minZoom), this.camera.maxZoom), 1);
     }
@@ -393,7 +393,7 @@ export class CanvasMap extends BaseElement {
 
   linksOnCurrentPlane() {
     if (!this.linksByPlane) return [];
-    return this.linksByPlane[this.plane - 1] || [];
+    return this.linksByPlane[this.floor] || [];
   }
 
   buildIconIndex() {
@@ -458,7 +458,7 @@ export class CanvasMap extends BaseElement {
 
   goToMapLink(destination) {
     this.stopFollowingPlayer();
-    this.showPlane(destination.plane + 1);
+    this.showFloor(destination.plane);
     const [targetX, targetY] = this.gamePositionToCameraCenter(destination.x, destination.y);
     this.camera.x.goTo(targetX, 0);
     this.camera.y.goTo(targetY, 0);
@@ -534,7 +534,7 @@ export class CanvasMap extends BaseElement {
         if (this.camera.y.target !== y) {
           this.camera.y.goTo(y, 100);
         }
-        this.showPlane(this.followingPlayer.coordinates.plane + 1);
+        this.showFloor(this.followingPlayer.coordinates.plane);
       }
 
       doAnotherUpdate = this.camera.x.animate(elapsed) || doAnotherUpdate;
@@ -689,7 +689,7 @@ export class CanvasMap extends BaseElement {
     if (!ghost) return;
     // Following the player where they are now would pull the camera back.
     this.stopFollowingPlayer();
-    this.showPlane(ghost.plane + 1);
+    this.showFloor(ghost.plane);
     const x = ghost.x * zoom - this.canvas.width / 2;
     const y = this.canvas.height / 2 - ghost.y * zoom;
     if (this.camera.x.target !== x) this.camera.x.goTo(x, REPLAY_FOLLOW_MS);
@@ -730,7 +730,7 @@ export class CanvasMap extends BaseElement {
     const minY = -this.camera.y.current / zoom;
     return {
       zoom,
-      plane: this.plane - 1,
+      plane: this.floor,
       minX,
       minY,
       maxX: minX + this.canvas.width / zoom,
@@ -845,7 +845,7 @@ export class CanvasMap extends BaseElement {
   drawPlayers() {
     const ctx = this.ctx;
     const zoom = this.camera.zoom.current;
-    const currentPlane = this.plane - 1;
+    const currentPlane = this.floor;
     const groups = this.layoutPlayers();
     const radius = this.markerRadius();
     const tile = PIXELS_PER_GAME_TILE * zoom;
@@ -915,7 +915,7 @@ export class CanvasMap extends BaseElement {
   drawPlayerLabels(groups, radius) {
     const ctx = this.ctx;
     const zoom = this.camera.zoom.current;
-    const currentPlane = this.plane - 1;
+    const currentPlane = this.floor;
     ctx.font = `${LABEL_FONT_PX}px rssmall`;
     const singles = groups.filter((group) => group.members.length === 1).map((group) => group.members[0]);
     const important = (player) =>
@@ -1109,7 +1109,7 @@ export class CanvasMap extends BaseElement {
     const { items, nextMs } = layoutMarkers(markers, {
       width,
       height,
-      plane: this.plane - 1,
+      plane: this.floor,
       tile: PIXELS_PER_GAME_TILE * this.camera.zoom.current,
       reducedMotion: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
       toScreen: (x, y) => this.tileCenterOnScreen(x, y),
@@ -1239,7 +1239,7 @@ export class CanvasMap extends BaseElement {
     const destinationSize = this.iconCanvasSize();
     const shift = destinationSize / 2;
 
-    const currentPlane = this.plane - 1;
+    const currentPlane = this.floor;
     for (const tile of this.tilesInView) {
       const locations = this.locations[tile.regionX]?.[tile.regionY];
       if (locations) {
@@ -1282,7 +1282,7 @@ export class CanvasMap extends BaseElement {
 
     for (let tileX = this.view.left - 1; tileX < this.view.right + 1; ++tileX) {
       for (let tileY = this.view.top + 1; tileY > this.view.bottom; --tileY) {
-        const labels = this.mapLabels[tileX]?.[tileY]?.[this.plane - 1];
+        const labels = this.mapLabels[tileX]?.[tileY]?.[this.floor];
         if (labels) {
           for (let i = 0; i < labels.length; i += 3) {
             const [x, y] = this.gamePositionToCanvas(labels[i], labels[i + 1]);
@@ -1325,7 +1325,7 @@ export class CanvasMap extends BaseElement {
     const left = this.view.left;
     const right = this.view.right;
     const bottom = this.view.bottom;
-    const tiles = this.tiles[this.plane - 1];
+    const tiles = this.tiles[this.floor];
     const imageSize = MAP_TILE_SIZE;
     this.tilesInView = [];
 
@@ -1334,7 +1334,7 @@ export class CanvasMap extends BaseElement {
       for (let tileY = top; tileY > bottom; --tileY) {
         const i = this.cantor(tileX, tileY);
         const tileWorldY = tileY * imageSize;
-        if (this.validTiles && !this.validTiles[this.plane - 1]?.has(i)) {
+        if (this.validTiles && !this.validTiles[this.floor]?.has(i)) {
           this.ctx.clearRect(tileWorldX, -tileWorldY, imageSize, imageSize);
           continue;
         }
@@ -1343,7 +1343,7 @@ export class CanvasMap extends BaseElement {
         if (!tile) {
           if (!loadNewTiles) continue;
           tile = new Image(MAP_TILE_SIZE, MAP_TILE_SIZE);
-          const tileFileBaseName = `${this.plane - 1}_${tileX}_${tileY}`;
+          const tileFileBaseName = `${this.floor}_${tileX}_${tileY}`;
           tile.src = `/map/${tileFileBaseName}.webp`;
           tile.regionX = tileX;
           tile.regionY = tileY;
@@ -1370,7 +1370,7 @@ export class CanvasMap extends BaseElement {
             try {
               this.ctx.drawImage(tile, tileWorldX, -tileWorldY);
             } catch (ex) {
-              console.error(`failed to draw map tile ${this.plane - 1}_${tileX}_${tileY}`, ex);
+              console.error(`failed to draw map tile ${this.floor}_${tileX}_${tileY}`, ex);
             }
           } catch {}
         } else if (!tile.onload) {
@@ -1388,17 +1388,27 @@ export class CanvasMap extends BaseElement {
     this.ctx.globalAlpha = 1;
   }
 
-  showPlane(plane) {
-    if (this.plane !== plane) {
-      this.plane = plane;
-      this.dispatchEvent(
-        new CustomEvent("plane-changed", {
-          detail: {
-            plane,
-          },
-        })
-      );
+  /**
+   * The floor shown, counted from one as the page's floor select has it.
+   * Inside the map it is `floor`, counted from zero like the `plane` of a
+   * player's coordinates.
+   */
+  get plane() {
+    return this.floor + 1;
+  }
 
+  set plane(plane) {
+    this.floor = plane - 1;
+  }
+
+  showPlane(plane) {
+    this.showFloor(plane - 1);
+  }
+
+  showFloor(floor) {
+    if (this.floor !== floor) {
+      this.floor = floor;
+      this.dispatchEvent(new CustomEvent("plane-changed", { detail: { plane: this.plane } }));
       this.requestUpdate();
     }
   }

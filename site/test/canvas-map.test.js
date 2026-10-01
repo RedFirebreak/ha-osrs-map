@@ -759,12 +759,11 @@ describe("CanvasMap.goToMapLink", () => {
   it("stops following player, switches plane, and centers camera", () => {
     const map = createMapInstance();
     map.followingPlayer = { name: "Alice", coordinates: { x: 100, y: 200, plane: 0 } };
-    const showPlaneSpy = vi.spyOn(map, "showPlane");
     const xGoToSpy = vi.spyOn(map.camera.x, "goTo");
     const yGoToSpy = vi.spyOn(map.camera.y, "goTo");
     map.goToMapLink({ x: 500, y: 600, plane: 2 });
     expect(map.followingPlayer.name).toBeNull();
-    expect(showPlaneSpy).toHaveBeenCalledWith(3);
+    expect(map.plane).toBe(3);
     expect(xGoToSpy).toHaveBeenCalled();
     expect(yGoToSpy).toHaveBeenCalled();
     expect(map.cursor.dx).toBe(0);
