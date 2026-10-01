@@ -217,31 +217,13 @@ cd site && npm test && npm run lint && npm run format:check
 The server's integration tests (`server/tests/`) drop and recreate the schema in the test database, so
 point them at a database you don't mind wiping.
 
-### Keeping up with group-ironmen
+### Game data
 
-The upstream project keeps refreshing its game data (items, map tiles, quests). To bring that in:
-
-```bash
-git remote add upstream https://github.com/christoabrown/group-ironmen.git
-git fetch upstream
-git merge upstream/master
-```
-
-Generated data under `site/public/` merges without conflicts (the quest, diary and collection log files
-are kept for that reason, although the site no longer loads them). The exception is item icons: this fork loads them from
-the icon CDN (see [Icons](#icons)), so `site/public/icons/items/` is deleted here. Upstream's
-"chore: update cache outputs" merges add or modify files in it, which shows up as modify/delete conflicts
-or as new files. Resolve them as deleted before committing the merge:
-
-```bash
-git rm -rq --ignore-unmatch site/public/icons/items
-git commit
-```
-
-The same goes for the skill and empty-slot sprites that used to be in `site/public/ui/` (`156-0.png` to
-`166-0.png`, `197-0.png` to `217-0.png`, `220-0.png`, `221-0.png` and `228-0.png`): keep them deleted.
-`npm test` fails while `site/public/icons/items` exists, so a merge that brings it back is caught. Server changes rarely apply: this fork
-replaced group tokens with sessions, reads every player from the hub, and dropped the Group Ironman data.
+The item list (`site/public/data/item_data.json`) and the map (`site/public/map/`, and `map_icons.json`,
+`map_labels.json` and `map_links.json` beside the item list) are what group-ironmen had generated from the
+game cache when this fork stopped merging from it. Nothing refreshes them: an item that is newer than the
+list is left out of inventories and gear, and a new area is missing from the map, until those files are
+generated again.
 
 ## Project structure
 
