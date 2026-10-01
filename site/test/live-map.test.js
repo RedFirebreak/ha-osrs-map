@@ -77,9 +77,53 @@ describe("player hit testing and clicks", () => {
       { kind: "player", name: "Alice", x: 100, y: 100, r: 8 },
       { kind: "cluster", x: 300, y: 300, r: 14, members: [] },
     ];
-    expect(map.getPlayerAtClient(104, 98).name).toBe("Alice");
-    expect(map.getPlayerAtClient(310, 305).kind).toBe("cluster");
-    expect(map.getPlayerAtClient(200, 200)).toBeNull();
+    expect(map.playerAt(104, 98).name).toBe("Alice");
+    expect(map.playerAt(310, 305).kind).toBe("cluster");
+    expect(map.playerAt(200, 200)).toBeNull();
+  });
+
+  it("shows a player's name for as long as the pointer is on them", () => {
+    const map = createMap();
+    map.processPointerMove = vi.fn();
+    map.renderedPlayers = [{ kind: "player", name: "Alice", x: 100, y: 100, r: 8, player: { name: "Alice" } }];
+    map.onPointerMove({ clientX: 100, clientY: 100 });
+    expect(map.hoveredPlayer).toBe("Alice");
+    expect(map.style.cursor).toBe("pointer");
+    expect(map.updateRequested).toBe(1);
+
+    map.updateRequested = 0;
+    map.onPointerMove({ clientX: 300, clientY: 300 });
+    expect(map.hoveredPlayer).toBeNull();
+    expect(map.style.cursor).toBe("");
+    expect(map.updateRequested).toBe(1);
+  });
+
+  it("doesn't click what the first finger was on when a second comes down to zoom", () => {
+    const map = createMap();
+    map.renderedPlayers = [{ kind: "player", name: "Alice", x: 100, y: 100, r: 8 }];
+    const selected = [];
+    pubsub.subscribe("player-selected", (value) => selected.push(value));
+    map.onTouchStart({ touches: [{ clientX: 100, clientY: 100 }], preventDefault: () => {} });
+    expect(map.press.overlay.id).toBe("players");
+    map.onTouchStart({
+      touches: [
+        { clientX: 100, clientY: 100 },
+        { clientX: 200, clientY: 200 },
+      ],
+    });
+    map.stopDragging();
+    expect(selected).toEqual([]);
+  });
+
+  it("looks for what is under the pointer in one order: links, players, events, trails", () => {
+    const map = createMap();
+    expect(map.overlays.map((overlay) => overlay.id)).toEqual(["links", "players", "events", "trails"]);
+    // A trail is only looked at: a press on one drags the map.
+    expect(map.overlays.filter((overlay) => overlay.activate).map((overlay) => overlay.id)).toEqual([
+      "links",
+      "players",
+      "events",
+    ]);
   });
 
   it("selects a player on click but not after a drag", () => {
