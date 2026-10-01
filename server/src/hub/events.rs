@@ -7,7 +7,7 @@ use crate::hub::client::{HubClient, HubError, Priority};
 use crate::hub::directory::HubDirectory;
 use crate::hub::fetch::{history_enabled, HistoryError};
 use crate::hub::models::HubEvent;
-use crate::hub::{record_error, HubContext, SharedHubStatus};
+use crate::hub::{record_error, retry_wait, HubContext, SharedHubStatus};
 use actix_web::{get, web, HttpResponse};
 use chrono::Utc;
 use serde::Deserialize;
@@ -179,12 +179,13 @@ pub fn start(
                         interval
                     }
                 }
-                Err(HubError::RateLimited(after)) => after.max(interval),
-                Err(HubError::Unauthorized) => Duration::from_secs(300),
                 Err(err) => {
-                    log::warn!("Hub events poll failed: {}", err);
-                    record_error(&status, format!("events: {}", err));
-                    interval * 4
+                    // A busy hub and a rejected key are the sync's to report.
+                    if !matches!(err, HubError::RateLimited(_) | HubError::Unauthorized) {
+                        log::warn!("Hub events poll failed: {}", err);
+                        record_error(&status, format!("events: {}", err));
+                    }
+                    retry_wait(&err, interval, interval * 4)
                 }
             };
             tokio::time::sleep(wait).await;

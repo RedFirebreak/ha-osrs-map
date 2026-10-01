@@ -1,5 +1,6 @@
 use crate::db;
 use crate::error::ApiError;
+use crate::http;
 use crate::models::{GEPrices, WikiGEPrices};
 use actix_web::{get, Error, HttpResponse};
 use arc_swap::{ArcSwap, ArcSwapAny};
@@ -12,22 +13,13 @@ use tokio::{task, time};
 static GE_PRICES: LazyLock<ArcSwapAny<Arc<String>>> =
     LazyLock::new(|| ArcSwap::from(Arc::new(String::default())));
 pub async fn fetch_latest_prices() -> Result<WikiGEPrices, ApiError> {
-    let wiki_ge_prices = task::spawn_blocking(|| {
-        ureq::get("https://prices.runescape.wiki/api/v1/osrs/latest")
-            .header(
-                "User-Agent",
-                "ha-osrs-map (github.com/RedFirebreak/ha-osrs-map)",
-            )
-            .call()
-            .map_err(ApiError::UreqError)?
-            .body_mut()
-            .read_json::<WikiGEPrices>()
-            .map_err(ApiError::UreqError)
+    http::blocking(|agent| {
+        let mut response = agent
+            .get("https://prices.runescape.wiki/api/v1/osrs/latest")
+            .call()?;
+        Ok(response.body_mut().read_json::<WikiGEPrices>()?)
     })
     .await
-    .unwrap()?;
-
-    Ok(wiki_ge_prices)
 }
 
 pub async fn update_ge_prices() -> Result<(), ApiError> {

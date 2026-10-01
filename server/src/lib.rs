@@ -7,6 +7,7 @@ pub mod db;
 pub mod discord_routes;
 pub mod error;
 pub mod health;
+mod http;
 pub mod hub;
 pub mod models;
 pub mod osrs;

@@ -78,6 +78,27 @@ pub async fn delete_group_member(
 /// it recently; if the sync stops (hub down), everyone goes offline.
 pub const ONLINE_CONFIRMATION: &str = "interval '5 minutes'";
 
+/// The member columns the sync fills, with their SQL types. Each has a
+/// `<column>_last_update`: when the map stored a new value (see the update
+/// batcher, which writes them in this order).
+pub(crate) const MEMBER_COLUMNS: [(&str, &str); 6] = [
+    ("stats", "int4[]"),
+    ("coordinates", "int4[]"),
+    ("skills", "int4[]"),
+    ("inventory", "int4[]"),
+    ("equipment", "int4[]"),
+    ("hub_meta", "jsonb"),
+];
+
+/// SQL for when the newest of a member's data was stored.
+fn last_updated_sql() -> String {
+    let stamps: Vec<String> = MEMBER_COLUMNS
+        .iter()
+        .map(|(column, _)| format!("{column}_last_update"))
+        .collect();
+    format!("GREATEST({})", stamps.join(", "))
+}
+
 /// How far the returned cursor lags behind the database clock, so that updates
 /// committed by a transaction that started just before the poll are not missed.
 /// Re-sending them is harmless: the site merges by name.
@@ -90,23 +111,28 @@ pub async fn get_group_data(
     group_id: i64,
     timestamp: &DateTime<Utc>,
 ) -> Result<GroupDataResponse, ApiError> {
+    // Each column only when it changed since the timestamp.
+    let changed: Vec<String> = MEMBER_COLUMNS
+        .iter()
+        .map(|(column, _)| {
+            format!(
+                "CASE WHEN {column}_last_update >= $1::TIMESTAMPTZ THEN {column} END AS {column}"
+            )
+        })
+        .collect();
     let stmt = client
         .prepare_cached(&format!(
             r#"
 SELECT member_name::text AS member_name, now() AS db_now,
 (hub_online AND hub_last_seen > now() - {ONLINE_CONFIRMATION}) AS online,
 hub_last_seen, hub_orphaned_at IS NOT NULL AS orphaned,
-GREATEST(stats_last_update, coordinates_last_update, skills_last_update,
-inventory_last_update, equipment_last_update, hub_meta_last_update) AS last_updated,
-CASE WHEN stats_last_update >= $1::TIMESTAMPTZ THEN stats ELSE NULL END AS stats,
-CASE WHEN coordinates_last_update >= $1::TIMESTAMPTZ THEN coordinates ELSE NULL END AS coordinates,
-CASE WHEN skills_last_update >= $1::TIMESTAMPTZ THEN skills ELSE NULL END AS skills,
-CASE WHEN inventory_last_update >= $1::TIMESTAMPTZ THEN inventory ELSE NULL END AS inventory,
-CASE WHEN equipment_last_update >= $1::TIMESTAMPTZ THEN equipment ELSE NULL END AS equipment,
-CASE WHEN hub_meta_last_update >= $1::TIMESTAMPTZ THEN hub_meta ELSE NULL END AS meta
+{last_updated} AS last_updated,
+{changed}
 FROM groupironman.members WHERE group_id=$2 AND NOT hidden
 ORDER BY member_name
-"#
+"#,
+            last_updated = last_updated_sql(),
+            changed = changed.join(",\n"),
         ))
         .await?;
 
@@ -139,7 +165,7 @@ ORDER BY member_name
             skills: row.try_get("skills")?,
             inventory: row.try_get("inventory")?,
             equipment: row.try_get("equipment")?,
-            meta: row.try_get("meta")?,
+            meta: row.try_get("hub_meta")?,
         });
     }
 
@@ -361,18 +387,18 @@ pub async fn ensure_member_exists(
 
 pub async fn list_players(client: &Client, group_id: i64) -> Result<Vec<PlayerInfo>, ApiError> {
     let stmt = client
-        .prepare_cached(
+        .prepare_cached(&format!(
             r#"
 SELECT member_name,
-GREATEST(stats_last_update, coordinates_last_update, skills_last_update,
-inventory_last_update, equipment_last_update) as last_updated,
+{last_updated} as last_updated,
 hub_account_id IS NOT NULL as hub_linked, hub_orphaned_at,
-(hub_online AND hub_last_seen > now() - interval '5 minutes') AS online,
+(hub_online AND hub_last_seen > now() - {ONLINE_CONFIRMATION}) AS online,
 hub_last_seen, hidden
 FROM groupironman.members WHERE group_id=$1
 ORDER BY member_name
 "#,
-        )
+            last_updated = last_updated_sql(),
+        ))
         .await?;
     let rows = client.query(&stmt, &[&group_id]).await?;
     let mut result = Vec::with_capacity(rows.len());

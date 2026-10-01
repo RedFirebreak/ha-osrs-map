@@ -87,7 +87,7 @@ impl HubClient {
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(config.timeout_secs)))
             .http_status_as_error(false)
-            .user_agent("ha-osrs-map (github.com/RedFirebreak/ha-osrs-map)")
+            .user_agent(crate::http::USER_AGENT)
             .build()
             .new_agent();
         let budget_per_min = config
