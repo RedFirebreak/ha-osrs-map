@@ -5,7 +5,7 @@ import { eventIconUrl, eventPlace } from "../data/event-view";
 import { selection } from "../data/selection";
 import { groupData } from "../data/group-data";
 
-export const EVENT_FILTERS = [
+const EVENT_FILTERS = [
   { label: "All", types: [] },
   { label: "Loot", types: ["loot", "pk_loot"] },
   { label: "Level ups", types: ["level_up"] },

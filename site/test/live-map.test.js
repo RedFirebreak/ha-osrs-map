@@ -34,7 +34,6 @@ function createMap() {
   map.cursor = { x: 0, y: 0, frameX: [0], frameY: [0] };
   map.touch = {};
   map.playerMarkers = new Map();
-  map.trails = new Map();
   map.renderedEvents = [];
   map.renderedPlayers = [];
   map.followingPlayer = {};
