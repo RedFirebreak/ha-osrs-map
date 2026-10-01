@@ -1,10 +1,16 @@
 //! Follows the hub's `/events` cursor feed into a small in-memory buffer that
 //! the site's events feed reads from. One follower serves every viewer, so the
 //! feed costs a fixed number of hub requests regardless of traffic.
+use crate::auth_middleware::Authenticated;
+use crate::config::Config;
 use crate::hub::client::{HubClient, HubError, Priority};
+use crate::hub::directory::HubDirectory;
+use crate::hub::fetch::history_enabled;
 use crate::hub::models::HubEvent;
-use crate::hub::{record_error, SharedHubStatus};
+use crate::hub::{record_error, HubContext, SharedHubStatus};
+use actix_web::{get, web, Error, HttpResponse};
 use chrono::Utc;
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
@@ -186,6 +192,75 @@ pub fn start(
     });
 }
 
+// ----------------------------------------------------------------------------
+// The feed as the site gets it
+// ----------------------------------------------------------------------------
+
+/// An event as the site gets it: the member's name on the map, and only the
+/// parts of the plugin's event object the site shows.
+pub(crate) fn event_json(seq: Option<u64>, event: &HubEvent, directory: &HubDirectory) -> Value {
+    let (location, items, source) = event_details(event);
+    serde_json::json!({
+        "seq": seq,
+        "id": event.id,
+        "type": event.event_type,
+        "member": directory.member_name(&event.account.id).unwrap_or_else(|| event.account.name.clone()),
+        "occurred_at": event.occurred_at,
+        "value_gp": event.value_gp,
+        "item_id": event.item_id,
+        "npc_id": event.npc_id,
+        "skill": event.skill,
+        "level": event.level,
+        "tier": event.tier,
+        "points": event.points,
+        "special_world": event.special_world.unwrap_or(false),
+        "title": event.title,
+        "line": event.line,
+        "location": location,
+        "items": items,
+        "source": source,
+    })
+}
+
+#[derive(Deserialize)]
+pub struct EventsQuery {
+    #[serde(default)]
+    limit: Option<usize>,
+    /// Only events after this `seq` (from an earlier response).
+    #[serde(default)]
+    after: Option<u64>,
+}
+
+/// Newest first. `latest` is the newest `seq` the server has, so a client can
+/// start following from "now" without receiving old events.
+#[get("/hub/events")]
+pub async fn get_events(
+    _auth: Authenticated,
+    query: web::Query<EventsQuery>,
+    config: web::Data<Config>,
+    context: web::Data<HubContext>,
+) -> Result<HttpResponse, Error> {
+    if let Err(response) = history_enabled(&config) {
+        return Ok(response);
+    }
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let filter = EventFilter {
+        types: &[],
+        after: query.after,
+    };
+    let directory = &context.directory;
+    let events: Vec<Value> = context
+        .events
+        .query(&filter, limit)
+        .iter()
+        .filter(|buffered| !directory.is_hidden(&buffered.event.account.id))
+        .map(|buffered| event_json(Some(buffered.seq), &buffered.event, directory))
+        .collect();
+    Ok(HttpResponse::Ok()
+        .insert_header(("X-Events-Latest", context.events.latest_seq().to_string()))
+        .json(events))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +354,21 @@ mod tests {
             .collect();
         assert_eq!(top, vec![2, 3, 1]);
         assert_eq!(source.as_deref(), Some("Kree'arra"));
+    }
+
+    #[test]
+    fn events_use_the_member_name_on_the_map() {
+        let directory = HubDirectory::default();
+        directory.bind("acc-1", "Map Name");
+        let event: HubEvent = serde_json::from_value(serde_json::json!({
+            "id": "e1", "type": "loot", "account": {"id": "acc-1", "name": "Hub Name"},
+            "occurred_at": "2026-09-29T14:13:40.046Z", "value_gp": 10
+        }))
+        .unwrap();
+        let json = event_json(Some(4), &event, &directory);
+        assert_eq!(json["member"], "Map Name");
+        assert_eq!(json["seq"], 4);
+        let unbound = HubDirectory::default();
+        assert_eq!(event_json(None, &event, &unbound)["member"], "Hub Name");
     }
 }

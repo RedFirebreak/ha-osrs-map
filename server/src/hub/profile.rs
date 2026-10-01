@@ -6,10 +6,11 @@ use crate::auth_middleware::Authenticated;
 use crate::config::Config;
 use crate::hub::client::{HubClient, HubError, Priority};
 use crate::hub::convert::equipment;
+use crate::hub::events::event_json;
+use crate::hub::fetch::{fetch_value, history_enabled, hub_error_response, parse};
 use crate::hub::models::{
     HubAccountGains, HubEquipmentHistory, HubEvent, HubItems, HubSessions, HubWealth,
 };
-use crate::hub::proxy::{event_json, fetch_value, history_enabled, hub_error_response, parse};
 use crate::hub::HubContext;
 use actix_web::{get, web, Error, HttpResponse};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};

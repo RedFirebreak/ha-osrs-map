@@ -7,12 +7,15 @@ pub mod client;
 pub mod convert;
 pub mod directory;
 pub mod events;
+pub mod fetch;
+pub mod leaderboards;
 pub mod members;
 pub mod models;
 pub mod profile;
-pub mod proxy;
 pub mod routes;
 pub mod sync;
+pub mod trails;
+pub mod xp;
 
 use chrono::{DateTime, Utc};
 use client::{HubClient, HubError, Priority};

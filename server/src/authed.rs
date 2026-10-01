@@ -74,7 +74,7 @@ pub async fn get_skill_data(
         db::get_skills_for_period(&client, group_id.0, aggregate_period).await?;
     drop(client);
     if config.hub_history_enabled() {
-        group_skill_data = crate::hub::proxy::merge_skill_data(
+        group_skill_data = crate::hub::xp::merge_skill_data(
             &hub_context,
             &query.period,
             group_skill_data,
