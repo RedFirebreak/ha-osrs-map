@@ -9,12 +9,8 @@ import { describeEvent } from "../data/hub-format";
 import { formatGp, relativeTime } from "../data/format";
 
 const REFRESH_MS = 60000;
-const GAIN_PERIODS = [
-  ["day", "Today"],
-  ["week", "This week"],
-  ["month", "This month"],
-];
-const LOOT_PERIODS = [
+// The periods the top gainers and the biggest drops can be asked for.
+const PERIODS = [
   ["day", "Today"],
   ["week", "This week"],
   ["month", "This month"],
@@ -62,8 +58,8 @@ export class ClanPage extends BaseElement {
     this.lootStatus = this.querySelector(".clan-page__loot-status");
 
     for (const [select, options, value] of [
-      [this.gainsPeriod, GAIN_PERIODS, "day"],
-      [this.lootPeriod, LOOT_PERIODS, "week"],
+      [this.gainsPeriod, PERIODS, "day"],
+      [this.lootPeriod, PERIODS, "week"],
     ]) {
       select.replaceChildren(...options.map(([key, label]) => new Option(label, key)));
       select.value = value;

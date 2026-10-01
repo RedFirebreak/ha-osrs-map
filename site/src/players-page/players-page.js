@@ -1,4 +1,5 @@
 import { BaseElement } from "../base-element/base-element";
+import { reorder } from "../dom";
 import { groupData } from "../data/group-data";
 import { carriedValue, filterMembers, overallXp, sortMembers, totalLevel, world } from "../data/roster-model";
 import { formatGp, relativeTime } from "../data/format";
@@ -250,20 +251,10 @@ export class PlayersPage extends BaseElement {
     const changed = order.length !== this.order.length || order.some((name, i) => name !== this.order[i]);
     if (changed) {
       this.order = order;
-      let cursor = this.tbody.firstChild;
-      for (const name of order) {
-        const tr = this.rows.get(name).tr;
-        if (tr === cursor) {
-          cursor = cursor.nextSibling;
-        } else {
-          this.tbody.insertBefore(tr, cursor);
-        }
-      }
-      while (cursor) {
-        const next = cursor.nextSibling;
-        cursor.remove();
-        cursor = next;
-      }
+      reorder(
+        this.tbody,
+        order.map((name) => this.rows.get(name).tr)
+      );
     }
 
     const online = members.filter((member) => member.online).length;

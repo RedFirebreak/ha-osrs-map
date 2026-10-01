@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { BaseElement } from "../src/base-element/base-element";
 import { clockTime, escapeHtml, shortDay } from "../src/data/format";
 import { remember, remembered } from "../src/data/storage";
-import { el } from "../src/dom";
+import { el, reorder } from "../src/dom";
 
 describe("what is written the same everywhere", () => {
   it("a time of day and a day, in the reader's own way of writing them", () => {
@@ -25,6 +25,27 @@ describe("what is written the same everywhere", () => {
     expect(element.textContent).toBe("<b>bold</b>");
     expect(element.children).toHaveLength(0);
     expect(el("div").className).toBe("");
+  });
+
+  it("a list put in order, moving only what is out of place", () => {
+    const list = el("ul");
+    const [a, b, c, d] = ["a", "b", "c", "d"].map((name) => el("li", "", name));
+    list.append(a, b, c, d);
+    const moved = [];
+    const insertBefore = list.insertBefore.bind(list);
+    list.insertBefore = (node, before) => {
+      moved.push(node.textContent);
+      return insertBefore(node, before);
+    };
+
+    // d goes to the front and b leaves.
+    reorder(list, [d, a, c]);
+    expect([...list.children].map((li) => li.textContent)).toEqual(["d", "a", "c"]);
+    expect(moved).toEqual(["d", "c"]);
+
+    moved.length = 0;
+    reorder(list, [d, a, c]);
+    expect(moved).toEqual([]);
   });
 });
 

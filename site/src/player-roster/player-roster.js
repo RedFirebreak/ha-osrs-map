@@ -1,18 +1,13 @@
 import { BaseElement } from "../base-element/base-element";
 import { groupData } from "../data/group-data";
-import { filterMembers, sortMembers, totalLevel, world } from "../data/roster-model";
+import { reorder } from "../dom";
+import { filterMembers, sortLabel, sortMembers, totalLevel, world } from "../data/roster-model";
 import { relativeTime } from "../data/format";
 import { selection, MAX_TRAILS } from "../data/selection";
 import { remember, remembered } from "../data/storage";
 
-const SORT_OPTIONS = [
-  ["status", "Online first"],
-  ["name", "Name"],
-  ["region", "Place"],
-  ["total", "Total level"],
-  ["world", "World"],
-  ["lastSeen", "Last seen"],
-];
+// The sort orders (see roster-model.js) this narrow list offers.
+const SORT_OPTIONS = ["status", "name", "region", "total", "world", "lastSeen"];
 const TIME_REFRESH_MS = 30000;
 const SETTINGS_KEY = "roster-settings";
 
@@ -59,14 +54,7 @@ export class PlayerRoster extends BaseElement {
     this.sortEl = this.querySelector(".player-roster__sort");
     this.chipsEl = this.querySelector(".player-roster__chips");
 
-    this.sortEl.replaceChildren(
-      ...SORT_OPTIONS.map(([value, label]) => {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label;
-        return option;
-      })
-    );
+    this.sortEl.replaceChildren(...SORT_OPTIONS.map((key) => new Option(sortLabel(key), key)));
     this.sortEl.value = this.sort;
     this.updateChips();
 
@@ -253,26 +241,18 @@ export class PlayerRoster extends BaseElement {
   refreshOrder() {
     const members = [...this.rows.keys()].map((name) => groupData.members.get(name)).filter(Boolean);
     const visible = filterMembers(members, { text: this.text, status: this.status });
-    const sorted =
-      this.sort === "region"
-        ? [...visible].sort(
-            (a, b) =>
-              Number(b.online) - Number(a.online) ||
-              (a.region || "~").localeCompare(b.region || "~") ||
-              a.name.localeCompare(b.name)
-          )
-        : sortMembers(visible, this.sort);
-    const order = sorted.map((member) => member.name);
+    const order = sortMembers(visible, this.sort).map((member) => member.name);
 
     const online = members.filter((member) => member.online).length;
     this.countEl.textContent = `${online} online · ${members.length} players`;
 
     if (order.length === this.order.length && order.every((name, i) => name === this.order[i])) return;
     this.order = order;
-    const fragment = document.createDocumentFragment();
-    for (const name of order) fragment.appendChild(this.rows.get(name));
     // Rows that are filtered out leave the list; they stay in `rows`.
-    this.list.replaceChildren(fragment);
+    reorder(
+      this.list,
+      order.map((name) => this.rows.get(name))
+    );
     this.querySelector(".player-roster__empty").hidden = order.length > 0;
   }
 }
