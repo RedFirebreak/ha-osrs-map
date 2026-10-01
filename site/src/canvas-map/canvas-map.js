@@ -248,6 +248,7 @@ export class CanvasMap extends BaseElement {
     }
     const coordinates = member.coordinates || {};
     if (this.isValidCoordinates(coordinates)) {
+      const turnedUp = !this.playerMarkers.has(member.name);
       this.playerMarkers.set(member.name, {
         name: member.name,
         label: member.name,
@@ -258,6 +259,8 @@ export class CanvasMap extends BaseElement {
         hitpoints: member.stats?.hitpoints,
         region: member.region,
       });
+      // An event that was waiting for its player has a place now.
+      if (turnedUp) this.placeLiveEvents();
 
       if (this.followingPlayer.name === member.name) {
         this.followingPlayer.coordinates = coordinates;
@@ -292,7 +295,7 @@ export class CanvasMap extends BaseElement {
     this.requestUpdate();
   }
 
-  /** Shows a place: `{x, y, plane, zoom}` in game coordinates (plane zero-based). */
+  /** Shows a place: `{x, y, plane, zoom}` in the site's coordinates, like a player's (plane zero-based). */
   handleMapFocus(focus) {
     if (!focus) return;
     this.stopFollowingPlayer();
@@ -770,7 +773,7 @@ export class CanvasMap extends BaseElement {
   }
 
   hideTrailTooltip() {
-    if (this.trailLayer.setHover(null)) this.requestUpdate();
+    if (this.trailLayerInstance?.setHover(null)) this.requestUpdate();
     if (this.trailTooltipShown) {
       this.trailTooltipShown = false;
       tooltipManager.hideTooltip();
