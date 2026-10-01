@@ -14,6 +14,7 @@ import { EventMarkers, REPLAY_POP_MAX, clusterPoints, layoutMarkers } from "./ev
 import { drawEventMarkers } from "./event-marker-renderer";
 import { IconCache } from "./icon-cache";
 import { EventPlaces } from "./event-places";
+import { GAME_TILES_PER_MAP_TILE, MAP_TILE_SIZE, PIXELS_PER_GAME_TILE, tileOrigin } from "./map-space";
 import { TrailLayer } from "./trail-layer";
 import { formatTrailTime } from "./trail-model";
 
@@ -74,8 +75,6 @@ export class CanvasMap extends BaseElement {
     this.subscribe("live-events", this.handleLiveEvents.bind(this));
 
     this.plane = 1;
-    this.tileSize = 256;
-    this.pixelsPerGameTile = 4;
     this.tiles = [new Map(), new Map(), new Map(), new Map()];
     this.tilesInView = [];
     this.previousFrameTime = performance.now();
@@ -190,8 +189,8 @@ export class CanvasMap extends BaseElement {
           console.error(`malformed map link destination for key "${key}"`);
           continue;
         }
-        const destTileX = Math.floor(destination[0] / (this.tileSize / this.pixelsPerGameTile));
-        const destTileY = Math.floor(destination[1] / (this.tileSize / this.pixelsPerGameTile));
+        const destTileX = Math.floor(destination[0] / GAME_TILES_PER_MAP_TILE);
+        const destTileY = Math.floor(destination[1] / GAME_TILES_PER_MAP_TILE);
         if (!this.validTiles?.[destination[2]]?.has(this.cantor(destTileX, destTileY))) {
           continue;
         }
@@ -268,7 +267,7 @@ export class CanvasMap extends BaseElement {
         this.followingPlayer.coordinates = coordinates;
       }
 
-      const padPx = this.pixelsPerGameTile * this.camera.zoom.current;
+      const padPx = PIXELS_PER_GAME_TILE * this.camera.zoom.current;
       if (this.isGameTileInView(coordinates.x, coordinates.y, padPx)) {
         this.requestUpdate();
       }
@@ -315,34 +314,40 @@ export class CanvasMap extends BaseElement {
 
   // Converts a position in the runescape world to a camera position at the center of the canvas
   gamePositionToCameraCenter(x, y) {
-    const tileCenterOffset = (this.pixelsPerGameTile * this.camera.zoom.current) / 2;
+    const tileCenterOffset = (PIXELS_PER_GAME_TILE * this.camera.zoom.current) / 2;
     return [
-      x * this.pixelsPerGameTile * this.camera.zoom.current - this.canvas.width / 2 + tileCenterOffset,
-      (y * this.pixelsPerGameTile - this.tileSize) * this.camera.zoom.current + this.canvas.height / 2,
+      x * PIXELS_PER_GAME_TILE * this.camera.zoom.current - this.canvas.width / 2 + tileCenterOffset,
+      (y * PIXELS_PER_GAME_TILE - MAP_TILE_SIZE) * this.camera.zoom.current + this.canvas.height / 2,
     ];
   }
 
   // Converts a position in the runescape world to a client position relative to the camera.
   // If the result is between [0, canvas.height] and [0, canvas.width] then it is visible.
   gamePositionToClient(x, y) {
-    const tileCenterOffset = (this.pixelsPerGameTile * this.camera.zoom.current) / 2;
+    const tileCenterOffset = (PIXELS_PER_GAME_TILE * this.camera.zoom.current) / 2;
     return [
-      x * this.pixelsPerGameTile * this.camera.zoom.current + tileCenterOffset - this.camera.x.current,
-      this.camera.y.current - (y * this.pixelsPerGameTile - this.tileSize) * this.camera.zoom.current,
+      x * PIXELS_PER_GAME_TILE * this.camera.zoom.current + tileCenterOffset - this.camera.x.current,
+      this.camera.y.current - (y * PIXELS_PER_GAME_TILE - MAP_TILE_SIZE) * this.camera.zoom.current,
     ];
   }
 
   // Converts a game position to a position on the canvas that we can use to draw on.
   gamePositionToCanvas(x, y) {
-    return [x * this.pixelsPerGameTile, -y * this.pixelsPerGameTile + this.tileSize];
+    return tileOrigin(x, y);
+  }
+
+  /** A client position, as a pointer event has it, on the canvas. */
+  canvasPoint(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    return [clientX - rect.left, clientY - rect.top];
   }
 
   // Checks if a game tile's canvas draw position is currently visible on the screen.
   // padPx is padding in screen pixels to account for icon/marker sizes that extend beyond the tile corner.
   isGameTileInView(x, y, padPx = 0) {
     const zoom = this.camera.zoom.current;
-    const screenX = x * this.pixelsPerGameTile * zoom - this.camera.x.current;
-    const screenY = (-y * this.pixelsPerGameTile + this.tileSize) * zoom + this.camera.y.current;
+    const screenX = x * PIXELS_PER_GAME_TILE * zoom - this.camera.x.current;
+    const screenY = (-y * PIXELS_PER_GAME_TILE + MAP_TILE_SIZE) * zoom + this.camera.y.current;
     return (
       screenX >= -padPx &&
       screenX <= this.canvas.width + padPx &&
@@ -428,9 +433,7 @@ export class CanvasMap extends BaseElement {
   }
 
   getLinkAtClient(clientX, clientY) {
-    const canvasRect = this.canvas.getBoundingClientRect();
-    const cx = clientX - canvasRect.left;
-    const cy = clientY - canvasRect.top;
+    const [cx, cy] = this.canvasPoint(clientX, clientY);
     const canvasSize = this.iconCanvasSize();
     const halfSize = (canvasSize * this.camera.zoom.current) / 2;
     let bestLink = null;
@@ -465,14 +468,14 @@ export class CanvasMap extends BaseElement {
   }
 
   buildMapLinkTooltip(destination) {
-    const mapSquareX = Math.floor(destination.x / 64);
-    const mapSquareY = Math.floor(destination.y / 64);
+    const mapSquareX = Math.floor(destination.x / GAME_TILES_PER_MAP_TILE);
+    const mapSquareY = Math.floor(destination.y / GAME_TILES_PER_MAP_TILE);
     const url = `/map/${destination.plane}_${mapSquareX}_${mapSquareY}.webp`;
     const alt = `Destination: (${destination.x}, ${destination.y}) plane ${destination.plane + 1}`;
-    const localX = destination.x - mapSquareX * 64;
-    const localY = destination.y - mapSquareY * 64;
-    const pctX = (localX / 64) * 100;
-    const pctY = 100 - (localY / 64) * 100;
+    const localX = destination.x - mapSquareX * GAME_TILES_PER_MAP_TILE;
+    const localY = destination.y - mapSquareY * GAME_TILES_PER_MAP_TILE;
+    const pctX = (localX / GAME_TILES_PER_MAP_TILE) * 100;
+    const pctY = 100 - (localY / GAME_TILES_PER_MAP_TILE) * 100;
     return `<div class="map-link-tooltip__container">
       <img src="${url}" alt="${alt}" class="map-link-tooltip__image" />
       <div class="map-link-tooltip__marker" style="left: ${pctX}%; top: ${pctY}%"></div>
@@ -561,7 +564,7 @@ export class CanvasMap extends BaseElement {
         this.camera.zoom.current;
       const isPanningABigDistance = !zooming && distanceLeftToTravel > 10;
 
-      const s = this.tileSize * this.camera.zoom.current;
+      const s = MAP_TILE_SIZE * this.camera.zoom.current;
       const top = this.camera.y.current / s;
       const left = this.camera.x.current / s;
       const right = left + this.canvas.width / s;
@@ -756,10 +759,10 @@ export class CanvasMap extends BaseElement {
   /** The trail point under a client position, if any: `{name, index, point}`. */
   getTrailAtClient(clientX, clientY) {
     if (!this.trailLayer.names().length) return null;
-    const rect = this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : { left: 0, top: 0 };
+    const [canvasX, canvasY] = this.canvasPoint(clientX, clientY);
     const zoom = this.camera.zoom.current;
-    const x = (clientX - rect.left + this.camera.x.current) / zoom;
-    const y = (clientY - rect.top - this.camera.y.current) / zoom;
+    const x = (canvasX + this.camera.x.current) / zoom;
+    const y = (canvasY - this.camera.y.current) / zoom;
     return this.trailLayer.hitTest(x, y, TRAIL_HOVER_PX / zoom, zoom);
   }
 
@@ -784,7 +787,7 @@ export class CanvasMap extends BaseElement {
 
   /** Screen position (relative to the canvas) of the centre of a game tile. */
   tileCenterOnScreen(x, y) {
-    const tile = this.pixelsPerGameTile * this.camera.zoom.current;
+    const tile = PIXELS_PER_GAME_TILE * this.camera.zoom.current;
     const [screenX, top] = this.gamePositionToClient(x, y);
     return [screenX, top + tile / 2];
   }
@@ -836,7 +839,7 @@ export class CanvasMap extends BaseElement {
   }
 
   markerRadius() {
-    return Math.min(Math.max(this.pixelsPerGameTile * this.camera.zoom.current * 0.45, 5), 10);
+    return Math.min(Math.max(PIXELS_PER_GAME_TILE * this.camera.zoom.current * 0.45, 5), 10);
   }
 
   drawPlayers() {
@@ -845,7 +848,7 @@ export class CanvasMap extends BaseElement {
     const currentPlane = this.plane - 1;
     const groups = this.layoutPlayers();
     const radius = this.markerRadius();
-    const tile = this.pixelsPerGameTile * zoom;
+    const tile = PIXELS_PER_GAME_TILE * zoom;
     this.renderedPlayers = [];
 
     ctx.save();
@@ -949,9 +952,7 @@ export class CanvasMap extends BaseElement {
   /** The drawn player or group of players under a client position, if any. */
   getPlayerAtClient(clientX, clientY) {
     if (!this.renderedPlayers?.length) return null;
-    const canvasRect = this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : { left: 0, top: 0 };
-    const x = clientX - canvasRect.left;
-    const y = clientY - canvasRect.top;
+    const [x, y] = this.canvasPoint(clientX, clientY);
     let best = null;
     let bestDistance = Infinity;
     for (const item of this.renderedPlayers) {
@@ -1109,7 +1110,7 @@ export class CanvasMap extends BaseElement {
       width,
       height,
       plane: this.plane - 1,
-      tile: this.pixelsPerGameTile * this.camera.zoom.current,
+      tile: PIXELS_PER_GAME_TILE * this.camera.zoom.current,
       reducedMotion: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
       toScreen: (x, y) => this.tileCenterOnScreen(x, y),
     });
@@ -1121,9 +1122,7 @@ export class CanvasMap extends BaseElement {
   /** The drawn event (or stack of events) under a client position, if any; see layoutMarkers. */
   getEventAtClient(clientX, clientY) {
     if (!this.renderedEvents?.length) return null;
-    const canvasRect = this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : { left: 0, top: 0 };
-    const x = clientX - canvasRect.left;
-    const y = clientY - canvasRect.top;
+    const [x, y] = this.canvasPoint(clientX, clientY);
     // The last drawn is on top.
     for (let i = this.renderedEvents.length - 1; i >= 0; i--) {
       const marker = this.renderedEvents[i];
@@ -1197,7 +1196,7 @@ export class CanvasMap extends BaseElement {
     this.ctx.strokeStyle = strokeColor;
     this.ctx.lineWidth = 1;
     for (const position of positions) {
-      this.ctx.rect(position.x, position.y, this.pixelsPerGameTile, this.pixelsPerGameTile);
+      this.ctx.rect(position.x, position.y, PIXELS_PER_GAME_TILE, PIXELS_PER_GAME_TILE);
     }
     this.ctx.stroke();
     this.ctx.fill();
@@ -1327,7 +1326,7 @@ export class CanvasMap extends BaseElement {
     const right = this.view.right;
     const bottom = this.view.bottom;
     const tiles = this.tiles[this.plane - 1];
-    const imageSize = this.tileSize;
+    const imageSize = MAP_TILE_SIZE;
     this.tilesInView = [];
 
     for (let tileX = left; tileX < right; ++tileX) {
@@ -1343,7 +1342,7 @@ export class CanvasMap extends BaseElement {
 
         if (!tile) {
           if (!loadNewTiles) continue;
-          tile = new Image(this.tileSize, this.tileSize);
+          tile = new Image(MAP_TILE_SIZE, MAP_TILE_SIZE);
           const tileFileBaseName = `${this.plane - 1}_${tileX}_${tileY}`;
           tile.src = `/map/${tileFileBaseName}.webp`;
           tile.regionX = tileX;
@@ -1727,18 +1726,16 @@ export class CanvasMap extends BaseElement {
       this.cursor.dy = utility.average(this.cursor.frameY) || 0;
     }
 
-    const canvasRect = this.canvas.getBoundingClientRect();
-    this.cursor.x = x - canvasRect.left;
-    this.cursor.y = y - canvasRect.top;
+    [this.cursor.x, this.cursor.y] = this.canvasPoint(x, y);
     this.cursor.worldX = Math.floor(
-      (this.cursor.x + this.camera.x.current) / this.pixelsPerGameTile / this.camera.zoom.current
+      (this.cursor.x + this.camera.x.current) / PIXELS_PER_GAME_TILE / this.camera.zoom.current
     );
     this.cursor.worldY = Math.floor(
-      (this.camera.y.current - this.cursor.y) / this.pixelsPerGameTile / this.camera.zoom.current +
-        this.tileSize / this.pixelsPerGameTile
+      (this.camera.y.current - this.cursor.y) / PIXELS_PER_GAME_TILE / this.camera.zoom.current +
+        GAME_TILES_PER_MAP_TILE
     );
-    this.cursor.canvasX = this.cursor.worldX * this.pixelsPerGameTile;
-    this.cursor.canvasY = -this.cursor.worldY * this.pixelsPerGameTile + this.tileSize - this.pixelsPerGameTile;
+    this.cursor.canvasX = this.cursor.worldX * PIXELS_PER_GAME_TILE;
+    this.cursor.canvasY = -this.cursor.worldY * PIXELS_PER_GAME_TILE + MAP_TILE_SIZE - PIXELS_PER_GAME_TILE;
 
     this.requestUpdate();
 
@@ -1763,11 +1760,11 @@ export class CanvasMap extends BaseElement {
 
     let newZoom;
     if (options.zoom === undefined) {
-      // Calculate a zoom change that keeps this.tileSize * zoom an integer value.
+      // Calculate a zoom change that keeps MAP_TILE_SIZE * zoom an integer value.
       // We don't want the canvas to have a zoom in the transform that makes the map tiles
       // a non integer size or it will cause black border to show around them.
-      const targetTileSize = this.tileSize * options.delta;
-      const delta = Math.round(targetTileSize) / this.tileSize;
+      const targetTileSize = MAP_TILE_SIZE * options.delta;
+      const delta = Math.round(targetTileSize) / MAP_TILE_SIZE;
       newZoom = Math.min(Math.max(this.camera.zoom.target + delta, this.camera.minZoom), this.camera.maxZoom);
     } else {
       // touch zoom

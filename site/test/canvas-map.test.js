@@ -14,6 +14,7 @@ vi.mock("../src/rs-tooltip/tooltip-manager", () => ({
 }));
 
 import { CanvasMap, ICON_SPRITE_SIZE } from "../src/canvas-map/canvas-map";
+import { GAME_TILES_PER_MAP_TILE } from "../src/canvas-map/map-space";
 import { centerOn as centerCameraOn, createMap as createMapInstance } from "./helpers/map";
 import { GroupData } from "../src/data/group-data";
 
@@ -226,7 +227,7 @@ describe("CanvasMap.isGameTileInView", () => {
     const map = createMapInstance();
     map.camera.x.current = 0;
     map.camera.y.current = 0;
-    const padding = map.tileSize / map.pixelsPerGameTile;
+    const padding = GAME_TILES_PER_MAP_TILE;
     const [centerClientX] = map.gamePositionToClient(0 + padding, 0 - padding);
     expect(centerClientX).toBeGreaterThanOrEqual(0);
   });
@@ -597,10 +598,10 @@ describe("CanvasMap.loadMapLinks", () => {
       "100,200,0": [300, 400, 1],
       "500,600,2": [700, 800, 3],
     };
-    const destTileX1 = Math.floor(300 / (map.tileSize / map.pixelsPerGameTile));
-    const destTileY1 = Math.floor(400 / (map.tileSize / map.pixelsPerGameTile));
-    const destTileX2 = Math.floor(700 / (map.tileSize / map.pixelsPerGameTile));
-    const destTileY2 = Math.floor(800 / (map.tileSize / map.pixelsPerGameTile));
+    const destTileX1 = Math.floor(300 / GAME_TILES_PER_MAP_TILE);
+    const destTileY1 = Math.floor(400 / GAME_TILES_PER_MAP_TILE);
+    const destTileX2 = Math.floor(700 / GAME_TILES_PER_MAP_TILE);
+    const destTileY2 = Math.floor(800 / GAME_TILES_PER_MAP_TILE);
     map.validTiles = [
       new Set(),
       new Set([map.cantor(destTileX1, destTileY1)]),
