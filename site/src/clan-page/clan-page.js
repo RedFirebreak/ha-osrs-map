@@ -1,10 +1,12 @@
 import { BaseElement } from "../base-element/base-element";
+import { el } from "../dom";
 import { api } from "../data/api";
 import { groupData } from "../data/group-data";
 import { eventIconUrl } from "../data/event-view";
 import { selection } from "../data/selection";
 import { groupByRegion, groupByWorld } from "../data/regions";
-import { describeEvent, formatGp, relativeTime } from "../data/hub-format";
+import { describeEvent } from "../data/hub-format";
+import { formatGp, relativeTime } from "../data/format";
 
 const REFRESH_MS = 60000;
 const GAIN_PERIODS = [
@@ -17,13 +19,6 @@ const LOOT_PERIODS = [
   ["week", "This week"],
   ["month", "This month"],
 ];
-
-function el(tag, className, text) {
-  const element = document.createElement(tag);
-  if (className) element.className = className;
-  if (text !== undefined) element.textContent = text;
-  return element;
-}
 
 function statusMessage(error) {
   if (error?.status === 404) return "Not available: the hub isn't connected or doesn't share this.";
@@ -92,17 +87,16 @@ export class ClanPage extends BaseElement {
         this.loadLoot();
       }
     });
-    this.refreshInterval = window.setInterval(() => {
+    this.every(REFRESH_MS, () => {
       if (!this.historyLoaded) return;
       this.loadGains();
       this.loadLoot();
-    }, REFRESH_MS);
+    });
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     document.body.classList.remove("clan-page");
-    window.clearInterval(this.refreshInterval);
     window.cancelAnimationFrame(this.presenceFrame);
     this.presenceFrame = null;
   }

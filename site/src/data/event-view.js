@@ -1,7 +1,9 @@
 import { GroupData } from "./group-data";
 import { Item } from "./item";
 import { skillIconUrl } from "./icons";
-import { describeEvent, formatGp, relativeTime } from "./hub-format";
+import { describeEvent } from "./hub-format";
+import { remember, remembered } from "./storage";
+import { clockTime, escapeHtml, formatGp, relativeTime } from "./format";
 
 // How a hub event looks wherever the map shows it: which kind it is, whether
 // the filters let it through, how much of a fuss it deserves, its icon and
@@ -42,20 +44,18 @@ const DIARY_CAPE_ITEM = 19476;
 const TOOLTIP_EVENTS = 5;
 const TOOLTIP_ITEMS = 3;
 
-export function escapeHtml(text) {
-  return String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
+/** Every kind on, drops from 100K, toasts on. */
 export function defaultEventFilters() {
-  return { loot: true, level: true, death: true, other: true, minLoot: 100000, toasts: true };
+  return { ...Object.fromEntries(EVENT_KINDS.map((kind) => [kind.key, true])), minLoot: 100000, toasts: true };
 }
 
+/** The filters as they were last chosen in this browser. */
 export function loadEventFilters() {
-  try {
-    return { ...defaultEventFilters(), ...JSON.parse(localStorage.getItem(EVENT_FILTERS_KEY) || "{}") };
-  } catch {
-    return defaultEventFilters();
-  }
+  return { ...defaultEventFilters(), ...remembered(EVENT_FILTERS_KEY, {}) };
+}
+
+export function saveEventFilters(filters) {
+  remember(EVENT_FILTERS_KEY, filters);
 }
 
 /** "loot", "level", "death" or "other"; null for a type the map doesn't show. */
@@ -151,8 +151,7 @@ function iconHtml(url, className) {
 function whenHtml(event, now) {
   const time = eventTimeMs(event);
   if (time === null) return "";
-  const clock = new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `${relativeTime(event.occurred_at, new Date(now))} · ${clock}`;
+  return `${relativeTime(event.occurred_at, new Date(now))} · ${clockTime(time)}`;
 }
 
 function detailLines(event, { now, place, approximate }) {

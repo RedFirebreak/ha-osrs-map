@@ -1,8 +1,9 @@
 import { BaseElement } from "../base-element/base-element";
 import { groupData } from "../data/group-data";
 import { filterMembers, sortMembers, totalLevel, world } from "../data/roster-model";
-import { relativeTime } from "../data/hub-format";
+import { relativeTime } from "../data/format";
 import { selection, MAX_TRAILS } from "../data/selection";
+import { remember, remembered } from "../data/storage";
 
 const SORT_OPTIONS = [
   ["status", "Online first"],
@@ -26,11 +27,7 @@ export const ACCOUNT_TYPE_BADGES = {
 };
 
 function loadSettings() {
-  try {
-    return { status: "all", sort: "status", ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
-  } catch {
-    return { status: "all", sort: "status" };
-  }
+  return { status: "all", sort: "status", ...remembered(SETTINGS_KEY, {}) };
 }
 
 /**
@@ -96,20 +93,11 @@ export class PlayerRoster extends BaseElement {
     this.subscribe("roster-changed", this.handleRosterChanged.bind(this));
     this.subscribe("player-selected", this.handleSelected.bind(this));
     this.subscribe("trails-changed", this.handleTrailsChanged.bind(this));
-    this.timeInterval = window.setInterval(() => this.refreshTimes(), TIME_REFRESH_MS);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    window.clearInterval(this.timeInterval);
+    this.every(TIME_REFRESH_MS, () => this.refreshTimes());
   }
 
   saveSettings() {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ status: this.status, sort: this.sort }));
-    } catch {
-      // Private mode: the settings just aren't remembered.
-    }
+    remember(SETTINGS_KEY, { status: this.status, sort: this.sort });
   }
 
   updateChips() {

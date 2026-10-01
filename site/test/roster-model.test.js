@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { carriedValue, filterMembers, shares, sortMembers, totalLevel, world } from "../src/data/roster-model";
 import { colorForName, hashName } from "../src/data/player-colors";
-import { formatDuration, formatGp, relativeTime } from "../src/data/hub-format";
+import { formatDuration, formatGp, relativeTime } from "../src/data/format";
 
 const member = (name, fields = {}) => ({
   name,

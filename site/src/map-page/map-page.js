@@ -4,13 +4,15 @@ import { groupData } from "../data/group-data";
 import { selection } from "../data/selection";
 import { colorForName } from "../data/player-colors";
 import {
-  EVENT_FILTERS_KEY,
   EVENT_KINDS,
   MIN_LOOT_OPTIONS,
   eventIsFresh,
   eventPasses,
   loadEventFilters,
+  saveEventFilters,
 } from "../data/event-view";
+import { clockTime, shortDay } from "../data/format";
+import { remember, remembered } from "../data/storage";
 // The page drives these two from the moment it is connected, so they have to
 // be defined before it is.
 import "../canvas-map/canvas-map";
@@ -31,24 +33,18 @@ const TRAIL_EVENTS_REFRESH_MS = 10 * 60 * 1000;
 /** "Hub data from 14:05" when `asOf` (unix seconds) is too long ago, else null. */
 function staleNotice(asOf) {
   if (!asOf || Date.now() / 1000 - asOf < TRAIL_STALE_S) return null;
-  const time = new Date(asOf * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `Hub data from ${time}`;
+  return `Hub data from ${clockTime(asOf * 1000)}`;
 }
 
 /** The day a trail (as the server sends it) starts, e.g. "26 Sep". */
 function trailStartDay(trail) {
   const [, , , time, dwell = 0] = trail.points[0];
-  return new Date((time - dwell) * 1000).toLocaleDateString([], { day: "numeric", month: "short" });
+  return shortDay((time - dwell) * 1000);
 }
 
 /** The trail length chosen last time, when the select still offers it. */
 function storedTrailDays(select) {
-  let stored = null;
-  try {
-    stored = localStorage.getItem(TRAIL_DAYS_KEY);
-  } catch {
-    // Private mode.
-  }
+  const stored = String(remembered(TRAIL_DAYS_KEY));
   return [...select.options].some((option) => option.value === stored) ? stored : select.value;
 }
 
@@ -163,11 +159,7 @@ export class MapPage extends BaseElement {
   // ---------------------------------------------------------------------------
 
   handleTrailDaysChange() {
-    try {
-      localStorage.setItem(TRAIL_DAYS_KEY, this.trailDaysSelect.value);
-    } catch {
-      // Not remembered in private mode.
-    }
+    remember(TRAIL_DAYS_KEY, this.trailDaysSelect.value);
     this.loadTrails();
   }
 
@@ -365,11 +357,7 @@ export class MapPage extends BaseElement {
     } else if (target.name) {
       this.filters[target.name] = target.checked;
     }
-    try {
-      localStorage.setItem(EVENT_FILTERS_KEY, JSON.stringify(this.filters));
-    } catch {
-      // Not remembered in private mode.
-    }
+    saveEventFilters(this.filters);
     this.worldMap.setEventFilters(this.filters);
     // Smaller drops than the trails' events were fetched with have to be asked for.
     this.loadTrailEvents();
