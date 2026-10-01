@@ -11,6 +11,7 @@ import { clusterPoints } from "./event-markers";
 import { EventLayer } from "./event-layer";
 import { GAME_TILES_PER_MAP_TILE, MAP_TILE_SIZE, PIXELS_PER_GAME_TILE, tileOrigin } from "./map-space";
 import { TrailLayer } from "./trail-layer";
+import { drawerInset } from "../player-profile/drawer-inset";
 import { formatTrailTime } from "./trail-model";
 
 export const ICON_SPRITE_SIZE = 15;
@@ -21,10 +22,6 @@ const DRAG_THRESHOLD_PX = 5;
 const TRAIL_HOVER_PX = 8;
 // Moving parts of a trail are redrawn about 25 times a second, not every frame.
 const TRAIL_FRAME_MS = 40;
-// The profile drawer and its margins (see player-profile.css): it covers this
-// much of one side of the map, on screens wide enough for it to be a drawer.
-const DRAWER_PX = 404;
-const DRAWER_MIN_SCREEN_PX = 701;
 // How long the camera takes to catch up with the replay's ghost.
 const REPLAY_FOLLOW_MS = 100;
 
@@ -1032,11 +1029,9 @@ export class CanvasMap extends BaseElement {
     const marker = this.eventLayer.find(id);
     if (!marker) return false;
     this.handleMapFocus({ x: marker.x, y: marker.y, plane: marker.plane });
-    if (this.canvas.width >= DRAWER_MIN_SCREEN_PX) {
-      const drawer = document.body.classList;
-      const shift = drawer.contains("profile-open") ? 1 : drawer.contains("profile-open-left") ? -1 : 0;
-      if (shift) this.camera.x.goTo(this.camera.x.target + (shift * DRAWER_PX) / 2, 400);
-    }
+    const covered = drawerInset(this.canvas.width);
+    const shift = (covered.right - covered.left) / 2;
+    if (shift) this.camera.x.goTo(this.camera.x.target + shift, 400);
     return true;
   }
 
