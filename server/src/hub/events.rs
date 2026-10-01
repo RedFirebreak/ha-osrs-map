@@ -5,10 +5,10 @@ use crate::auth_middleware::Authenticated;
 use crate::config::Config;
 use crate::hub::client::{HubClient, HubError, Priority};
 use crate::hub::directory::HubDirectory;
-use crate::hub::fetch::history_enabled;
+use crate::hub::fetch::{history_enabled, HistoryError};
 use crate::hub::models::HubEvent;
 use crate::hub::{record_error, HubContext, SharedHubStatus};
-use actix_web::{get, web, Error, HttpResponse};
+use actix_web::{get, web, HttpResponse};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::Value;
@@ -239,10 +239,8 @@ pub async fn get_events(
     query: web::Query<EventsQuery>,
     config: web::Data<Config>,
     context: web::Data<HubContext>,
-) -> Result<HttpResponse, Error> {
-    if let Err(response) = history_enabled(&config) {
-        return Ok(response);
-    }
+) -> Result<HttpResponse, HistoryError> {
+    history_enabled(&config)?;
     let limit = query.limit.unwrap_or(100).clamp(1, 500);
     let filter = EventFilter {
         types: &[],

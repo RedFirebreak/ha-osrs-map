@@ -4,16 +4,15 @@ use crate::auth_middleware::Authenticated;
 use crate::config::Config;
 use crate::hub::client::HubError;
 use crate::hub::fetch::{
-    bulk_accounts, fetch_value, history_enabled, hub_error_response, list_param, parse,
+    bulk_accounts, bulk_or_each, fetch_json, history_enabled, list_param, parse, HistoryError,
 };
 use crate::hub::models::{HubLocationPoint, HubLocationsMulti};
 use crate::hub::HubContext;
-use actix_web::{get, web, Error, HttpResponse};
+use actix_web::{get, web, HttpResponse};
 use chrono::{Duration as ChronoDuration, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 const LOCATIONS_TTL: Duration = Duration::from_secs(60);
@@ -228,10 +227,9 @@ pub struct TrailsQuery {
     days: Option<i64>,
 }
 
-/// Trails of several accounts from the hub's bulk `/locations`. One unreadable
-/// account fails a bulk request, so a 404 is retried account by account.
-/// Returns the points per hub id (an account missing from the map isn't
-/// shared) and how long ago the oldest part of the answer came from the hub.
+/// Trails of several accounts from the hub's bulk `/locations`. Returns the
+/// points per hub id (an account missing from the map isn't shared) and how
+/// long ago the oldest part of the answer came from the hub.
 async fn fetch_trails(
     context: &HubContext,
     ids: &[String],
@@ -239,19 +237,15 @@ async fn fetch_trails(
 ) -> Result<(HashMap<String, Vec<HubLocationPoint>>, Duration), HubError> {
     let from = (Utc::now() - ChronoDuration::days(days)).to_rfc3339();
     let fetch = |chunk: Vec<String>| {
+        let accounts = chunk.join(",");
         let from = from.clone();
-        let client = Arc::clone(&context.client);
         async move {
-            let key = format!("locations:{}:{}", days, chunk.join(","));
+            let key = format!("locations:{}:{}", days, accounts);
+            let query = [("accounts", accounts), ("from", from)];
             context
                 .cache
-                .get_or_fetch_dated(&key, LOCATIONS_TTL, || async {
-                    fetch_value::<Value>(
-                        &client,
-                        "/locations",
-                        &[("accounts", chunk.join(",")), ("from", from.clone())],
-                    )
-                    .await
+                .get_or_fetch_dated(&key, LOCATIONS_TTL, || {
+                    fetch_json(&context.client, "/locations", &query)
                 })
                 .await
         }
@@ -260,24 +254,7 @@ async fn fetch_trails(
     let mut result = HashMap::new();
     let mut oldest = Duration::ZERO;
     for chunk in ids.chunks(bulk_accounts(context)) {
-        let values = match fetch(chunk.to_vec()).await {
-            Ok(value) => vec![value],
-            Err(HubError::NotFound) if chunk.len() > 1 => {
-                let mut values = Vec::new();
-                for id in chunk {
-                    match fetch(vec![id.clone()]).await {
-                        Ok(value) => values.push(value),
-                        Err(HubError::NotFound) => {}
-                        Err(err) => return Err(err),
-                    }
-                }
-                values
-            }
-            // The one account asked for isn't shared.
-            Err(HubError::NotFound) => Vec::new(),
-            Err(err) => return Err(err),
-        };
-        for (value, age) in values {
+        for (value, age) in bulk_or_each(chunk, &fetch).await? {
             oldest = oldest.max(age);
             for account in parse::<HubLocationsMulti>(&value)?.accounts {
                 result.insert(account.account.id, account.points);
@@ -293,14 +270,15 @@ pub async fn get_trails(
     query: web::Query<TrailsQuery>,
     config: web::Data<Config>,
     context: web::Data<HubContext>,
-) -> Result<HttpResponse, Error> {
-    if let Err(response) = history_enabled(&config) {
-        return Ok(response);
-    }
+) -> Result<HttpResponse, HistoryError> {
+    history_enabled(&config)?;
     let days = query.days.unwrap_or(1).clamp(1, 30);
     let members = list_param(query.members.as_deref());
     if members.is_empty() || members.len() > MAX_TRAILS {
-        return Ok(HttpResponse::BadRequest().body(format!("give 1 to {} members", MAX_TRAILS)));
+        return Err(HistoryError::BadRequest(format!(
+            "give 1 to {} members",
+            MAX_TRAILS
+        )));
     }
     let ids: Vec<(String, Option<String>)> = members
         .into_iter()
@@ -313,10 +291,7 @@ pub async fn get_trails(
     let (mut points, age) = if known.is_empty() {
         (HashMap::new(), Duration::ZERO)
     } else {
-        match fetch_trails(&context, &known, days).await {
-            Ok(fetched) => fetched,
-            Err(err) => return Ok(hub_error_response(err)),
-        }
+        fetch_trails(&context, &known, days).await?
     };
     let trails: Vec<Value> = ids
         .into_iter()

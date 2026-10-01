@@ -4,23 +4,34 @@ use crate::auth_middleware::Authenticated;
 use crate::config::Config;
 use crate::hub::client::HubError;
 use crate::hub::events::{event_json, EventFilter};
-use crate::hub::fetch::{fetch_value, history_enabled, hub_error_response, parse};
+use crate::hub::fetch::{cached, history_enabled, HistoryError, Period};
 use crate::hub::models::{HubEvent, HubLeaderboards, HubLootLeaderboard};
 use crate::hub::HubContext;
-use actix_web::{get, web, Error, HttpResponse};
+use actix_web::{get, web, HttpResponse};
 use chrono::{Duration as ChronoDuration, Utc};
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::Arc;
 use std::time::Duration;
 
-const GAINS_TTL: Duration = Duration::from_secs(300);
-const LOOT_TTL: Duration = Duration::from_secs(60);
+const GAINS_BOARD_TTL: Duration = Duration::from_secs(300);
+const LOOT_BOARD_TTL: Duration = Duration::from_secs(60);
+/// The drops asked of the hub; a request for fewer is cut from the same answer.
+const LOOT_BOARD_SIZE: usize = 50;
 
 #[derive(Deserialize)]
 pub struct GainsQuery {
     #[serde(default)]
-    period: Option<String>,
+    period: Option<Period>,
+}
+
+/// The period of a leaderboard, which go back a month at most.
+fn board_period(period: Option<Period>, default: Period) -> Result<Period, HistoryError> {
+    match period.unwrap_or(default) {
+        Period::Year => Err(HistoryError::BadRequest(
+            "period must be day, week or month".to_owned(),
+        )),
+        period => Ok(period),
+    }
 }
 
 #[get("/hub/gains")]
@@ -29,30 +40,17 @@ pub async fn get_gains(
     query: web::Query<GainsQuery>,
     config: web::Data<Config>,
     context: web::Data<HubContext>,
-) -> Result<HttpResponse, Error> {
-    if let Err(response) = history_enabled(&config) {
-        return Ok(response);
-    }
-    let period = match query.period.as_deref().unwrap_or("day") {
-        period @ ("day" | "week" | "month") => period.to_owned(),
-        _ => return Ok(HttpResponse::BadRequest().body("period must be day, week or month")),
-    };
-    let client = Arc::clone(&context.client);
-    let value = context
-        .cache
-        .get_or_fetch(&format!("gains:{}", period), GAINS_TTL, || async {
-            fetch_value::<Value>(
-                &client,
-                "/leaderboards/gains",
-                &[("period", period.clone())],
-            )
-            .await
-        })
-        .await;
-    let leaderboards = match value.and_then(|value| parse::<HubLeaderboards>(&value)) {
-        Ok(leaderboards) => leaderboards,
-        Err(err) => return Ok(hub_error_response(err)),
-    };
+) -> Result<HttpResponse, HistoryError> {
+    history_enabled(&config)?;
+    let period = board_period(query.period, Period::Day)?;
+    let leaderboards: HubLeaderboards = cached(
+        &context,
+        &format!("gains:{period}"),
+        GAINS_BOARD_TTL,
+        "/leaderboards/gains",
+        &[("period", period.to_string())],
+    )
+    .await?;
 
     let directory = &context.directory;
     let boards: Vec<Value> = leaderboards
@@ -83,7 +81,7 @@ pub async fn get_gains(
 #[derive(Deserialize)]
 pub struct LootQuery {
     #[serde(default)]
-    period: Option<String>,
+    period: Option<Period>,
     #[serde(default)]
     limit: Option<usize>,
 }
@@ -96,37 +94,30 @@ pub async fn get_loot_leaderboard(
     query: web::Query<LootQuery>,
     config: web::Data<Config>,
     context: web::Data<HubContext>,
-) -> Result<HttpResponse, Error> {
-    if let Err(response) = history_enabled(&config) {
-        return Ok(response);
-    }
-    let period = match query.period.as_deref().unwrap_or("week") {
-        period @ ("day" | "week" | "month") => period.to_owned(),
-        _ => return Ok(HttpResponse::BadRequest().body("period must be day, week or month")),
+) -> Result<HttpResponse, HistoryError> {
+    history_enabled(&config)?;
+    let period = board_period(query.period, Period::Week)?;
+    let limit = query.limit.unwrap_or(10).clamp(1, LOOT_BOARD_SIZE);
+    let board = cached::<HubLootLeaderboard>(
+        &context,
+        &format!("loot:{period}"),
+        LOOT_BOARD_TTL,
+        "/leaderboards/loot",
+        &[
+            ("period", period.to_string()),
+            ("limit", LOOT_BOARD_SIZE.to_string()),
+        ],
+    )
+    .await;
+    let (events, partial): (Vec<HubEvent>, bool) = match board {
+        Ok(board) => (
+            board.entries.into_iter().map(|entry| entry.event).collect(),
+            false,
+        ),
+        Err(HubError::NotFound) => (loot_from_buffer(&context, period), true),
+        Err(err) => return Err(err.into()),
     };
-    let limit = query.limit.unwrap_or(10).clamp(1, 50);
-    let client = Arc::clone(&context.client);
-    let value = context
-        .cache
-        .get_or_fetch(&format!("loot:{}", period), LOOT_TTL, || async {
-            fetch_value::<Value>(
-                &client,
-                "/leaderboards/loot",
-                &[("period", period.clone()), ("limit", "50".to_string())],
-            )
-            .await
-        })
-        .await;
     let directory = &context.directory;
-    let (events, partial): (Vec<HubEvent>, bool) =
-        match value.and_then(|value| parse::<HubLootLeaderboard>(&value)) {
-            Ok(board) => (
-                board.entries.into_iter().map(|entry| entry.event).collect(),
-                false,
-            ),
-            Err(HubError::NotFound) => (loot_from_buffer(&context, &period), true),
-            Err(err) => return Ok(hub_error_response(err)),
-        };
     let entries: Vec<Value> = events
         .iter()
         .filter(|event| !directory.is_hidden(&event.account.id))
@@ -137,20 +128,15 @@ pub async fn get_loot_leaderboard(
         })
         .collect();
     Ok(HttpResponse::Ok().json(serde_json::json!({
-        "period": period,
+        "period": period.as_str(),
         "partial": partial,
         "entries": entries,
     })))
 }
 
 /// The most valuable buffered drops of the period, for hubs without the loot leaderboard.
-fn loot_from_buffer(context: &HubContext, period: &str) -> Vec<HubEvent> {
-    let since = Utc::now()
-        - match period {
-            "day" => ChronoDuration::days(1),
-            "week" => ChronoDuration::days(7),
-            _ => ChronoDuration::days(30),
-        };
+fn loot_from_buffer(context: &HubContext, period: Period) -> Vec<HubEvent> {
+    let since = Utc::now() - ChronoDuration::days(period.days());
     let types = ["loot".to_string(), "pk_loot".to_string()];
     let filter = EventFilter {
         types: &types,
@@ -169,4 +155,19 @@ fn loot_from_buffer(context: &HubContext, period: &str) -> Vec<HubEvent> {
         .collect();
     events.sort_by_key(|event| std::cmp::Reverse((event.value_gp, event.occurred_at)));
     events
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_leaderboard_goes_back_a_month_at_most() {
+        assert_eq!(board_period(None, Period::Week).unwrap(), Period::Week);
+        assert_eq!(
+            board_period(Some(Period::Month), Period::Day).unwrap(),
+            Period::Month
+        );
+        assert!(board_period(Some(Period::Year), Period::Day).is_err());
+    }
 }

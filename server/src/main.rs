@@ -129,7 +129,8 @@ async fn main() -> std::io::Result<()> {
             .service(hub::profile::get_player_sessions)
             .service(hub::profile::get_player_wealth)
             .service(hub::profile::get_player_equipment_history)
-            .service(hub::profile::get_player_events);
+            .service(hub::profile::get_player_events)
+            .service(hub::profile::get_player_trail_events);
 
         // Public endpoints
         let unauthed_scope = web::scope("/api")

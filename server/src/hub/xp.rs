@@ -1,7 +1,6 @@
 //! XP history for the skill graphs, from the hub's `/xp`.
-use crate::authed::SkillDataPeriod;
 use crate::hub::client::{HubError, Priority};
-use crate::hub::fetch::{bulk_accounts, parse};
+use crate::hub::fetch::{bulk_accounts, bulk_or_each, parse, Period};
 use crate::hub::models::{HubXpLine, HubXpMulti};
 use crate::hub::HubContext;
 use crate::models::{AggregateSkillData, GroupSkillData, MemberSkillData};
@@ -18,21 +17,12 @@ type XpPoint = (DateTime<Utc>, i64);
 const MAX_UNKNOWN_SKILL_RETRIES: usize = 5;
 const XP_TTL: Duration = Duration::from_secs(300);
 
-fn xp_window(period: &SkillDataPeriod, now: DateTime<Utc>) -> (DateTime<Utc>, &'static str) {
+/// Where a graph of the period starts, one point before the period itself,
+/// and the hub's resolution for it.
+fn xp_window(period: Period, now: DateTime<Utc>) -> (DateTime<Utc>, &'static str) {
     match period {
-        SkillDataPeriod::Day => (now - ChronoDuration::hours(25), "1h"),
-        SkillDataPeriod::Week => (now - ChronoDuration::days(8), "1d"),
-        SkillDataPeriod::Month => (now - ChronoDuration::days(31), "1d"),
-        SkillDataPeriod::Year => (now - ChronoDuration::days(366), "1d"),
-    }
-}
-
-fn period_key(period: &SkillDataPeriod) -> &'static str {
-    match period {
-        SkillDataPeriod::Day => "day",
-        SkillDataPeriod::Week => "week",
-        SkillDataPeriod::Month => "month",
-        SkillDataPeriod::Year => "year",
+        Period::Day => (now - ChronoDuration::hours(25), "1h"),
+        period => (now - ChronoDuration::days(period.days() + 1), "1d"),
     }
 }
 
@@ -96,10 +86,10 @@ fn requested_skills(context: &HubContext) -> Vec<&'static str> {
 async fn fetch_xp_chunk(
     context: &HubContext,
     ids: &[String],
-    period: &SkillDataPeriod,
+    period: Period,
 ) -> Result<Arc<Value>, HubError> {
     let client = &context.client;
-    let key = format!("xp:{}:{}", period_key(period), ids.join(","));
+    let key = format!("xp:{}:{}", period, ids.join(","));
     let (from, resolution) = xp_window(period, Utc::now());
     context
         .cache
@@ -141,7 +131,7 @@ async fn fetch_xp_chunk(
 async fn hub_skill_data(
     context: &HubContext,
     bindings: &[(String, String)],
-    period: &SkillDataPeriod,
+    period: Period,
 ) -> HashMap<String, Vec<AggregateSkillData>> {
     let names_by_id: HashMap<&str, &str> = bindings
         .iter()
@@ -152,20 +142,10 @@ async fn hub_skill_data(
 
     let mut result = HashMap::new();
     for chunk in ids.chunks(bulk_accounts(context)) {
-        let values = match fetch_xp_chunk(context, chunk, period).await {
-            Ok(value) => vec![value],
-            // One unreadable account fails the whole request; retry one by one.
-            Err(HubError::NotFound) if chunk.len() > 1 => {
-                let mut values = Vec::new();
-                for id in chunk {
-                    if let Ok(value) =
-                        fetch_xp_chunk(context, std::slice::from_ref(id), period).await
-                    {
-                        values.push(value);
-                    }
-                }
-                values
-            }
+        let fetch = |ids: Vec<String>| async move { fetch_xp_chunk(context, &ids, period).await };
+        let values = match bulk_or_each(chunk, fetch).await {
+            Ok(values) => values,
+            // The members of this chunk keep their local history.
             Err(err) => {
                 log::debug!("No hub XP history for {:?}: {}", chunk, err);
                 continue;
@@ -190,7 +170,7 @@ async fn hub_skill_data(
 /// history. With `members`, only those members (case-insensitive).
 pub async fn merge_skill_data(
     context: &HubContext,
-    period: &SkillDataPeriod,
+    period: Period,
     local: GroupSkillData,
     members: Option<&HashSet<String>>,
 ) -> GroupSkillData {
@@ -265,6 +245,27 @@ mod tests {
         assert_eq!((rows[1].data[attack], rows[1].data[sailing]), (100, 20));
         assert_eq!((rows[2].data[attack], rows[2].data[sailing]), (150, 20));
         assert!(rows.iter().all(|row| row.data.len() == 24));
+    }
+
+    #[test]
+    fn a_graph_starts_one_point_before_its_period() {
+        let now = at("2026-09-29T12:00:00Z");
+        assert_eq!(
+            xp_window(Period::Day, now),
+            (at("2026-09-28T11:00:00Z"), "1h")
+        );
+        assert_eq!(
+            xp_window(Period::Week, now),
+            (at("2026-09-21T12:00:00Z"), "1d")
+        );
+        assert_eq!(
+            xp_window(Period::Month, now),
+            (at("2026-08-29T12:00:00Z"), "1d")
+        );
+        assert_eq!(
+            xp_window(Period::Year, now),
+            (at("2025-09-28T12:00:00Z"), "1d")
+        );
     }
 
     #[test]
