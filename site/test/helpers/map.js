@@ -23,7 +23,6 @@ export function createMap() {
   map.touch = {};
   map.playerMarkers = new Map();
   map.renderedPlayers = [];
-  map.renderedEvents = [];
   map.followingPlayer = {};
   map.tiles = [new Map(), new Map(), new Map(), new Map()];
   map.tilesInView = [];

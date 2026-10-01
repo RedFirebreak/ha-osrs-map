@@ -1439,7 +1439,7 @@ describe("CanvasMap trails", () => {
 
     map.setTrail("Alice", trail, STYLE);
     map.setTrailEvents(new Map([["Alice", [level]]]));
-    expect(map.eventMarkers.find("l")).toMatchObject({
+    expect(map.eventLayer.markers.find("l")).toMatchObject({
       x: 3210,
       y: 3201,
       plane: 0,
@@ -1455,7 +1455,7 @@ describe("CanvasMap trails", () => {
     expect(changed).toHaveBeenCalledTimes(3);
 
     map.clearTrail("Alice");
-    expect(map.eventMarkers.find("l")).toBeNull();
+    expect(map.eventLayer.markers.find("l")).toBeNull();
   });
 
   it("shows a trail from the server's answer and takes it off again", () => {
@@ -1580,7 +1580,7 @@ describe("CanvasMap trails", () => {
     }
     const shown = (map, now = Date.now()) =>
       Object.fromEntries(
-        map.eventMarkers
+        map.eventLayer.markers
           .visible({ filters, now, replayTime: map.trailLayer.replayTime })
           .map((marker) => [marker.id, marker])
       );
@@ -1629,7 +1629,7 @@ describe("CanvasMap trails", () => {
       map.setEventFilters({ ...filters, level: false });
       map.setReplayTime(mid - 30);
       map.setReplayTime(mid + 30);
-      expect(map.eventMarkers.pops.size).toBe(0);
+      expect(map.eventLayer.markers.pops.size).toBe(0);
     });
   });
 

@@ -149,39 +149,39 @@ describe("events on the map", () => {
       added: [],
       initial: true,
     });
-    expect(map.eventMarkers.find("death")).toMatchObject({ x: 3200, y: 3201, plane: 1, color: "red" });
-    expect(map.eventMarkers.find("loot")).toMatchObject({ x: 3000, y: 3001, plane: 0 });
-    expect(map.eventMarkers.find("offline")).toBeNull();
+    expect(map.eventLayer.markers.find("death")).toMatchObject({ x: 3200, y: 3201, plane: 1, color: "red" });
+    expect(map.eventLayer.markers.find("loot")).toMatchObject({ x: 3000, y: 3001, plane: 0 });
+    expect(map.eventLayer.markers.find("offline")).toBeNull();
   });
 
   it("are put back without a fuss when the map opens, and ring when they happen", () => {
     map.handleLiveEvents({ events: [drop("old", 5000)], added: [], initial: true });
-    expect(map.eventMarkers.find("old")).toMatchObject({ arrived: null, approximate: true });
+    expect(map.eventLayer.markers.find("old")).toMatchObject({ arrived: null, approximate: true });
 
     const news = drop("new", 2000);
     map.handleLiveEvents({ events: [news, drop("old", 5000)], added: [news], initial: false });
-    expect(map.eventMarkers.find("new")).toMatchObject({ arrived: NOW, approximate: false });
+    expect(map.eventLayer.markers.find("new")).toMatchObject({ arrived: NOW, approximate: false });
   });
 
   it("don't ring for the last poll, replayed to a map that is only now there", () => {
     const event = drop("a", 2000);
     map.handleLiveEvents({ events: [event], added: [event], initial: false });
-    expect(map.eventMarkers.find("a").arrived).toBeNull();
+    expect(map.eventLayer.markers.find("a").arrived).toBeNull();
   });
 
   it("turn up once their player does", () => {
     map.handleLiveEvents({ events: [drop("bob", MINUTE, { member: "Bob" })], added: [], initial: true });
-    expect(map.eventMarkers.find("bob")).toBeNull();
+    expect(map.eventLayer.markers.find("bob")).toBeNull();
     map.handleUpdatedMembers([{ name: "Bob", coordinates: { x: 3100, y: 3100, plane: 0 }, color: "blue" }]);
-    expect(map.eventMarkers.find("bob")).toMatchObject({ x: 3100, y: 3100, color: "blue" });
+    expect(map.eventLayer.markers.find("bob")).toMatchObject({ x: 3100, y: 3100, color: "blue" });
   });
 
   it("turn up when a player on the roster gets a position", () => {
     map.handleLiveEvents({ events: [drop("bob", MINUTE, { member: "Bob" })], added: [], initial: true });
     map.handleUpdatedMembers([alice, { name: "Bob", color: "blue" }]);
-    expect(map.eventMarkers.find("bob")).toBeNull();
+    expect(map.eventLayer.markers.find("bob")).toBeNull();
     map.handleUpdatedCoordinates({ name: "Bob", coordinates: { x: 3100, y: 3100, plane: 0 }, color: "blue" });
-    expect(map.eventMarkers.find("bob")).toMatchObject({ x: 3100, y: 3100, color: "blue" });
+    expect(map.eventLayer.markers.find("bob")).toMatchObject({ x: 3100, y: 3100, color: "blue" });
   });
 
   it("leave the trails alone until there is one", () => {
@@ -206,15 +206,15 @@ describe("events on the map", () => {
       vi.setSystemTime(NOW + 5 * MINUTE);
       const fresh = reloaded();
       fresh.handleLiveEvents({ events: [event], added: [], initial: true });
-      expect(fresh.eventMarkers.find("a")).toMatchObject({ x: 3000, y: 3001, plane: 0, approximate: false });
+      expect(fresh.eventLayer.markers.find("a")).toMatchObject({ x: 3000, y: 3001, plane: 0, approximate: false });
       // Put back, not announced.
-      expect(fresh.eventMarkers.find("a").arrived).toBeNull();
+      expect(fresh.eventLayer.markers.find("a").arrived).toBeNull();
     });
 
     it("are where the player is now, as a guess, when this browser never saw them happen", () => {
       const fresh = reloaded();
       fresh.handleLiveEvents({ events: [drop("a", 5 * MINUTE)], added: [], initial: true });
-      expect(fresh.eventMarkers.find("a")).toMatchObject({ x: 2500, y: 2500, approximate: true });
+      expect(fresh.eventLayer.markers.find("a")).toMatchObject({ x: 2500, y: 2500, approximate: true });
       expect(localStorage.getItem(EVENT_PLACES_KEY)).toBeNull();
     });
 
@@ -234,24 +234,24 @@ describe("events on the map", () => {
       localStorage.setItem(EVENT_PLACES_KEY, "{not json");
       const fresh = reloaded();
       fresh.handleLiveEvents({ events: [drop("a", 5 * MINUTE)], added: [], initial: true });
-      expect(fresh.eventMarkers.find("a")).toMatchObject({ x: 2500, approximate: true });
+      expect(fresh.eventLayer.markers.find("a")).toMatchObject({ x: 2500, approximate: true });
     });
   });
 
   it("start over when the feed does", () => {
     map.handleLiveEvents({ events: [drop("a", MINUTE)], added: [], initial: true });
     map.handleLiveEvents({ events: [drop("b", MINUTE)], added: [], initial: true });
-    expect(map.eventMarkers.find("a")).toBeNull();
-    expect(map.eventMarkers.find("b")).not.toBeNull();
+    expect(map.eventLayer.markers.find("a")).toBeNull();
+    expect(map.eventLayer.markers.find("b")).not.toBeNull();
   });
 
   it("are drawn under their tile, and can be found there", () => {
     map.handleLiveEvents({ events: [drop("a", MINUTE)], added: [], initial: true });
     map.drawEvents();
-    expect(map.renderedEvents).toHaveLength(1);
+    expect(map.eventLayer.rendered).toHaveLength(1);
     const [x, y] = map.tileCenterOnScreen(3000, 3001);
-    expect(map.renderedEvents[0]).toMatchObject({ anchorX: x, anchorY: y, count: 1 });
-    expect(map.renderedEvents[0].y).toBeGreaterThan(y);
+    expect(map.eventLayer.rendered[0]).toMatchObject({ anchorX: x, anchorY: y, count: 1 });
+    expect(map.eventLayer.rendered[0].y).toBeGreaterThan(y);
     expect(map.ctx.arc).toHaveBeenCalled();
   });
 
@@ -260,7 +260,7 @@ describe("events on the map", () => {
     map.setEventFilters({ ...defaultEventFilters(), loot: false });
     expect(map.updateRequested).toBe(1);
     map.drawEvents();
-    expect(map.renderedEvents).toEqual([]);
+    expect(map.eventLayer.rendered).toEqual([]);
   });
 
   it("have the map drawn again while they ring, and now and then while they fade", () => {
@@ -288,8 +288,8 @@ describe("events on the map", () => {
 
     vi.setSystemTime(NOW + EVENT_MARKER_MS);
     map.drawEvents();
-    expect(map.renderedEvents).toEqual([]);
-    expect(map.eventMarkers.find("a")).toBeNull();
+    expect(map.eventLayer.rendered).toEqual([]);
+    expect(map.eventLayer.markers.find("a")).toBeNull();
   });
 
   describe("under the pointer", () => {
@@ -306,7 +306,7 @@ describe("events on the map", () => {
         initial: true,
       });
       map.drawEvents();
-      ({ x, y } = map.renderedEvents[0]);
+      ({ x, y } = map.eventLayer.rendered[0]);
     });
 
     it("say what happened, once for as long as the pointer stays", () => {
@@ -339,7 +339,7 @@ describe("events on the map", () => {
       // Off to one side, but in view.
       centerOn(map, 3020, 3010);
       map.drawEvents();
-      ({ x, y } = map.renderedEvents[0]);
+      ({ x, y } = map.eventLayer.rendered[0]);
 
       map.onPointerDown({ clientX: x, clientY: y });
       map.stopDragging();
