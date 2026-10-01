@@ -645,7 +645,7 @@ async fn fetch_trails(
     for chunk in ids.chunks(bulk_accounts(context)) {
         let values = match fetch(chunk.to_vec()).await {
             Ok(value) => vec![value],
-            Err(HubError::NotFound) => {
+            Err(HubError::NotFound) if chunk.len() > 1 => {
                 let mut values = Vec::new();
                 for id in chunk {
                     match fetch(vec![id.clone()]).await {
@@ -656,6 +656,8 @@ async fn fetch_trails(
                 }
                 values
             }
+            // The one account asked for isn't shared.
+            Err(HubError::NotFound) => Vec::new(),
             Err(err) => return Err(err),
         };
         for (value, age) in values {
