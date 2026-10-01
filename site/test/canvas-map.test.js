@@ -1718,7 +1718,7 @@ describe("CanvasMap trails", () => {
     const map = createMapInstance();
     map.setTrail("Alice", serverTrail(), STYLE);
     centerCameraOn(map, 3210, 3201);
-    const view = map.trailView();
+    const view = map.viewport();
     const [x, y] = [3210 * 4 + 2, -3201 * 4 + 258];
     expect(view).toMatchObject({ zoom: 1, plane: 0 });
     // The camera centres on a tile to within the tile itself.

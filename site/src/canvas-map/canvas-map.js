@@ -342,18 +342,47 @@ export class CanvasMap extends BaseElement {
     return [clientX - rect.left, clientY - rect.top];
   }
 
+  /** Whether a place on the canvas is in view, or within `pad` pixels of it. */
+  isOnScreen(x, y, pad = 0) {
+    return x >= -pad && y >= -pad && x <= this.canvas.width + pad && y <= this.canvas.height + pad;
+  }
+
   // Checks if a game tile's canvas draw position is currently visible on the screen.
   // padPx is padding in screen pixels to account for icon/marker sizes that extend beyond the tile corner.
   isGameTileInView(x, y, padPx = 0) {
+    const [screenX, screenY] = this.mapLinkScreenCenter(x, y);
+    return this.isOnScreen(screenX, screenY, padPx);
+  }
+
+  /**
+   * What an overlay needs to know of the camera, to draw and to find what is
+   * under the pointer: the zoom, the floor shown (`plane`, from zero), the
+   * size of the canvas and of a game tile on it, what is in view in map
+   * pixels, where a game tile's centre is on screen, and the time by the
+   * server's clock and the page's. It is made when asked for, and right for
+   * as long as the camera stays where it is.
+   */
+  viewport() {
     const zoom = this.camera.zoom.current;
-    const screenX = x * PIXELS_PER_GAME_TILE * zoom - this.camera.x.current;
-    const screenY = (-y * PIXELS_PER_GAME_TILE + MAP_TILE_SIZE) * zoom + this.camera.y.current;
-    return (
-      screenX >= -padPx &&
-      screenX <= this.canvas.width + padPx &&
-      screenY >= -padPx &&
-      screenY <= this.canvas.height + padPx
-    );
+    const { width, height } = this.canvas;
+    const minX = this.camera.x.current / zoom;
+    const minY = -this.camera.y.current / zoom;
+    return {
+      zoom,
+      plane: this.floor,
+      width,
+      height,
+      tile: PIXELS_PER_GAME_TILE * zoom,
+      minX,
+      minY,
+      maxX: minX + width / zoom,
+      maxY: minY + height / zoom,
+      toScreen: (x, y) => this.tileCenterOnScreen(x, y),
+      onScreen: (x, y, pad) => this.isOnScreen(x, y, pad),
+      nowS: api.serverNow() / 1000,
+      nowMs: performance.now(),
+      reducedMotion: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
+    };
   }
 
   requestUpdate() {
@@ -723,28 +752,10 @@ export class CanvasMap extends BaseElement {
     this.dispatchEvent(new CustomEvent("trail-timeline-changed"));
   }
 
-  /** What the trail renderer needs to know of the camera, in map pixels. */
-  trailView() {
-    const zoom = this.camera.zoom.current;
-    const minX = this.camera.x.current / zoom;
-    const minY = -this.camera.y.current / zoom;
-    return {
-      zoom,
-      plane: this.floor,
-      minX,
-      minY,
-      maxX: minX + this.canvas.width / zoom,
-      maxY: minY + this.canvas.height / zoom,
-      nowS: this.trailLayer.now(),
-      nowMs: performance.now(),
-      reducedMotion: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
-    };
-  }
-
   /** Draws the trails. Returns whether one of them is animating. */
   drawTrails() {
     if (!this.trailLayer.names().length) return false;
-    return this.trailLayer.draw(this.ctx, this.trailView(), this.selectedName);
+    return this.trailLayer.draw(this.ctx, this.viewport(), this.selectedName);
   }
 
   /** Asks for the next frame of a trail's animation, a little later. */
@@ -829,7 +840,7 @@ export class CanvasMap extends BaseElement {
     for (const marker of this.playerMarkers.values()) {
       if (!this.isValidCoordinates(marker.coordinates)) continue;
       const [x, y] = this.tileCenterOnScreen(marker.coordinates.x, marker.coordinates.y);
-      if (x < -pad || y < -pad || x > this.canvas.width + pad || y > this.canvas.height + pad) continue;
+      if (!this.isOnScreen(x, y, pad)) continue;
       points.push({ ...marker, x, y, plane: marker.coordinates.plane });
     }
     if (zoom >= CLUSTER_BELOW_ZOOM) {
@@ -1094,26 +1105,16 @@ export class CanvasMap extends BaseElement {
     if (!store) return;
     const now = api.serverNow();
     store.prune(now);
-    const { width, height } = this.canvas;
+    const view = this.viewport();
     // A long trail has thousands of events; only those in view are laid out.
     const pad = 80;
     const markers = store.visible({
       filters: this.eventFilters,
       now,
       replayTime: this.trailLayerInstance?.replayTime ?? null,
-      within: (x, y) => {
-        const [screenX, screenY] = this.tileCenterOnScreen(x, y);
-        return screenX > -pad && screenY > -pad && screenX < width + pad && screenY < height + pad;
-      },
+      within: (x, y) => view.onScreen(...view.toScreen(x, y), pad),
     });
-    const { items, nextMs } = layoutMarkers(markers, {
-      width,
-      height,
-      plane: this.floor,
-      tile: PIXELS_PER_GAME_TILE * this.camera.zoom.current,
-      reducedMotion: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
-      toScreen: (x, y) => this.tileCenterOnScreen(x, y),
-    });
+    const { items, nextMs } = layoutMarkers(markers, view);
     drawEventMarkers(this.ctx, items, { icons: this.eventIcons });
     this.renderedEvents = items;
     if (nextMs !== null) this.requestEventFrame(nextMs);
