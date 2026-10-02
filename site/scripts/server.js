@@ -91,7 +91,7 @@ app.use(express.static(publicDir));
 if (backend) {
   console.log(`Backend for api calls: ${backend}`);
   app.use(express.json());
-  app.use("/api*", (req, res) => {
+  app.use("/api", (req, res) => {
     const forwardUrl = backend + req.originalUrl;
     const headers = Object.assign({}, req.headers);
     delete headers.host;
@@ -127,7 +127,8 @@ if (backend) {
   console.log("No backend supplied for api calls, not going to handle api requests");
 }
 
-app.get("*", function (request, response) {
+// Everything else is a page of the site. "/{*path}" is every path, the root included.
+app.get("/{*path}", function (request, response) {
   // Icons moved to the icon CDN; old /icons/ and /ui/ sprite URLs get a 404, not the page.
   if (
     (request.path.includes("/map") && request.path.includes(".png")) ||
@@ -140,7 +141,9 @@ app.get("*", function (request, response) {
   }
 });
 
-const server = app.listen(port, "0.0.0.0", () => {
+// express 5 hands a failed listen (the port is taken) to this callback instead of letting it throw.
+const server = app.listen(port, "0.0.0.0", (error) => {
+  if (error) throw error;
   console.log(`Listening on http://0.0.0.0:${port}`);
 });
 
