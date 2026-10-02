@@ -425,15 +425,15 @@ describe("map page trails", () => {
       replayButton().click();
       expect(scrubber().hidden).toBe(false);
       expect(replayButton().getAttribute("aria-pressed")).toBe("true");
-      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(NOW_S, { follow: false });
+      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(NOW_S, { follow: false, hop: null });
 
       scrubber().seek(NOW_S - 600);
-      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(NOW_S - 600, { follow: true });
+      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(NOW_S - 600, { follow: true, hop: null });
 
       replayButton().click();
       expect(scrubber().hidden).toBe(true);
       expect(replayButton().getAttribute("aria-pressed")).toBe("false");
-      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(null, { follow: false });
+      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(null, { follow: false, hop: null });
     });
 
     it("stops following the player once the map is dragged", () => {
@@ -441,7 +441,7 @@ describe("map page trails", () => {
       worldMap.dispatchEvent(new CustomEvent("map-dragged"));
       expect(scrubber().querySelector(".trail-scrubber__follow input").checked).toBe(false);
       scrubber().seek(NOW_S - 600);
-      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(NOW_S - 600, { follow: false });
+      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(NOW_S - 600, { follow: false, hop: null });
     });
 
     it("closes when the last trail is switched off", () => {
@@ -449,7 +449,7 @@ describe("map page trails", () => {
       selection.clearTrails();
       worldMap.dispatchEvent(new CustomEvent("trail-timeline-changed"));
       expect(scrubber().hidden).toBe(true);
-      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(null, { follow: false });
+      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(null, { follow: false, hop: null });
     });
 
     it("asks the map what happens next on the trails", () => {
@@ -457,9 +457,15 @@ describe("map page trails", () => {
       expect(worldMap.trailNextChange).toHaveBeenCalledWith(NOW_S - 100);
     });
 
-    it("asks the map where the player lands next, to hold the replay there", () => {
-      scrubber().nextHold(NOW_S - 100, NOW_S - 70);
+    it("asks the map where the player hops next, to stop the replay for it", () => {
+      scrubber().nextHop(NOW_S - 100, NOW_S - 70);
       expect(worldMap.trailNextHop).toHaveBeenCalledWith(NOW_S - 100, NOW_S - 70);
+    });
+
+    it("passes on how far a teleport that is played out has got", () => {
+      const hop = { leave: NOW_S - 600, land: NOW_S - 598, progress: 0.4 };
+      scrubber().dispatchEvent(new CustomEvent("replay-change", { detail: { time: NOW_S - 600, follow: true, hop } }));
+      expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(NOW_S - 600, { follow: true, hop });
     });
 
     it("keeps the speed that was picked when the length of the trails changes", async () => {

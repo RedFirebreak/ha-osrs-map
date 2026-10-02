@@ -5,8 +5,11 @@ import {
   bezierHandles,
   buildGeometry,
   hitTest,
+  hopFocus,
+  hopPhases,
   lodForZoom,
   placeAtTime,
+  pointOnArc,
   pointOnRun,
   smoothRun,
   vertexAtTime,
@@ -262,5 +265,64 @@ describe("hitTest", () => {
   it("misses when the pointer is further away than the radius", () => {
     const [x, y] = tileCenter(3210, 3200);
     expect(hitTest(geometry, x, y + 20, 8)).toBeNull();
+  });
+});
+
+describe("a teleport played out", () => {
+  const points = [
+    at(3200, 3200, 0),
+    at(3210, 3200, 1),
+    // A teleport on the surface, upstairs, a short walk, then off into an instance.
+    at(2662, 3305, 2, { plane: 1 }),
+    at(2670, 3305, 3, { plane: 1 }),
+    at(6500, 3305, 4),
+  ];
+  const geometry = buildGeometry(buildTrailModel(points), 2);
+  const [near, far] = geometry.jumps;
+
+  it("goes through leaving, travelling and arriving, one after the other", () => {
+    expect(hopPhases(0)).toEqual({ depart: 0, travel: 0, arrive: 0 });
+    expect(hopPhases(0.15)).toMatchObject({ travel: 0, arrive: 0 });
+    expect(hopPhases(0.15).depart).toBeCloseTo(0.5, 5);
+    expect(hopPhases(0.5)).toMatchObject({ depart: 1, arrive: 0 });
+    expect(hopPhases(0.5).travel).toBeCloseTo(0.5, 5);
+    expect(hopPhases(0.85)).toMatchObject({ depart: 1, travel: 1 });
+    expect(hopPhases(0.85).arrive).toBeCloseTo(0.5, 5);
+    expect(hopPhases(1)).toEqual({ depart: 1, travel: 1, arrive: 1 });
+  });
+
+  it("sets off gently and slows down before it arrives", () => {
+    expect(hopPhases(0.35).travel).toBeLessThan(0.125);
+    expect(hopPhases(0.65).travel).toBeGreaterThan(0.875);
+  });
+
+  it("finds any place on an arc", () => {
+    const arc = arcPath(0, 0, 100, 0, 4);
+    expect(pointOnArc(arc, 0)).toEqual([0, 0]);
+    expect(pointOnArc(arc, 1)).toEqual([100, 0]);
+    expect(pointOnArc(arc, 0.5)).toEqual([arc[4], arc[5]]);
+    const [x, y] = pointOnArc(arc, 0.125);
+    expect(x).toBeCloseTo(arc[2] / 2, 5);
+    expect(y).toBeCloseTo(arc[3] / 2, 5);
+  });
+
+  it("is looked at where the player left, then along the arc, then where they landed", () => {
+    const [ax, ay] = tileCenter(3210, 3200);
+    const [bx, by] = tileCenter(2662, 3305);
+    expect(hopFocus(near, 0.2)).toEqual({ x: ax, y: ay, plane: 0 });
+    const middle = hopFocus(near, 0.5);
+    expect(middle.x).toBeLessThan(ax);
+    expect(middle.x).toBeGreaterThan(bx);
+    expect(Math.abs(middle.y - (ay + by) / 2)).toBeGreaterThan(20);
+    expect(middle.plane).toBe(0);
+    expect(hopFocus(near, 0.8)).toEqual({ x: bx, y: by, plane: 1 });
+  });
+
+  it("is looked at from one end and then the other when the two are on different parts of the map", () => {
+    const [ax, ay] = tileCenter(2670, 3305);
+    const [bx, by] = tileCenter(6500, 3305);
+    expect(far.arc).toBeNull();
+    expect(hopFocus(far, 0.45)).toEqual({ x: ax, y: ay, plane: 1 });
+    expect(hopFocus(far, 0.55)).toEqual({ x: bx, y: by, plane: 0 });
   });
 });

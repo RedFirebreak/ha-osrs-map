@@ -282,15 +282,54 @@ export function placeAtTime(geometry, time) {
   for (const jump of geometry.jumps) {
     if (time < jump.tA || time >= jump.tB) continue;
     place = { x: jump.ax, y: jump.ay, plane: jump.planeA };
-    if (jump.arc) {
-      const along = ((time - jump.tA) / (jump.tB - jump.tA)) * (jump.arc.length / 2 - 1);
-      const i = Math.floor(along);
-      const frac = along - i;
-      place.x = jump.arc[i * 2] + (jump.arc[i * 2 + 2] - jump.arc[i * 2]) * frac;
-      place.y = jump.arc[i * 2 + 1] + (jump.arc[i * 2 + 3] - jump.arc[i * 2 + 1]) * frac;
-    }
+    if (jump.arc) [place.x, place.y] = pointOnArc(jump.arc, (time - jump.tA) / (jump.tB - jump.tA));
   }
   return place;
+}
+
+/** The position `[x, y]` on an arc (see arcPath) a fraction (0..1) of the way along. */
+export function pointOnArc(arc, fraction) {
+  const pieces = arc.length / 2 - 1;
+  const along = Math.min(Math.max(fraction, 0), 1) * pieces;
+  const i = Math.min(Math.floor(along), pieces - 1);
+  const frac = along - i;
+  return [arc[i * 2] + (arc[i * 2 + 2] - arc[i * 2]) * frac, arc[i * 2 + 1] + (arc[i * 2 + 3] - arc[i * 2 + 1]) * frac];
+}
+
+// A teleport the replay plays out (see ReplayClock) goes through three parts,
+// one after the other: the player vanishes where they left, the way to where
+// they land is travelled, and they appear there. These are the shares of the
+// whole at which the first ends and the last begins.
+const HOP_DEPARTED = 0.3;
+const HOP_ARRIVING = 0.7;
+
+/**
+ * How far each part of a teleport that is played out has got, for a `progress`
+ * (0..1) of the whole: `{depart, travel, arrive}`, each 0..1. The travelling
+ * sets off gently and slows down before it arrives.
+ */
+export function hopPhases(progress) {
+  const part = (from, to) => Math.min(1, Math.max(0, (progress - from) / (to - from)));
+  const travel = part(HOP_DEPARTED, HOP_ARRIVING);
+  return {
+    depart: part(0, HOP_DEPARTED),
+    travel: travel * travel * (3 - 2 * travel),
+    arrive: part(HOP_ARRIVING, 1),
+  };
+}
+
+/**
+ * Where to look while a teleport (a jump of buildGeometry) is played out, in
+ * map pixels: `{x, y, plane}`. That is where the player left, then along the
+ * arc, then where they landed. Without an arc the two ends are too far apart
+ * to go from one to the other: halfway it is the other end at once.
+ */
+export function hopFocus(jump, progress) {
+  const { travel } = hopPhases(progress);
+  if (travel <= 0 || (!jump.arc && travel < 0.5)) return { x: jump.ax, y: jump.ay, plane: jump.planeA };
+  if (travel >= 1 || !jump.arc) return { x: jump.bx, y: jump.by, plane: jump.planeB };
+  const [x, y] = pointOnArc(jump.arc, travel);
+  return { x, y, plane: jump.planeA };
 }
 
 function outside(box, x, y, radius) {

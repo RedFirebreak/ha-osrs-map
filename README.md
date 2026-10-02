@@ -46,7 +46,8 @@ of Group Ironman teams:
   to see when the player was where, or press Replay to play the routes back on a timeline with ticks for
   the events and teleports (the 300 that matter most when there are more); the map follows the player
   while it plays, until you drag it,
-  waits a moment wherever they teleport or go underground, and each event rings as the replay passes
+  plays a teleport out (the player vanishes, the map goes to where they land, they appear there),
+  waits a moment wherever they go underground, and each event rings as the replay passes
   it. The trails you had on are still there after a reload.
 - **Clan page**: who's online and where (click a place to see it on the map), which worlds, the top XP
   gainers, the biggest drops of the day, week or month, and the event feed.

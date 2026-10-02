@@ -293,4 +293,126 @@ describe("drawTrail, replay", () => {
     const ctx = recordingContext();
     expect(drawTrail(ctx, viewOf(3215, 3202), trailOf(walk, { selected: true }), replayAt(1))).toBe(false);
   });
+
+  describe("while a teleport is played out", () => {
+    const points = [at(3200, 3200, 3), at(3210, 3200, 2), at(3210, 2900, 1), at(3220, 2900, 0)];
+    const [ax, ay] = tileCenter(3210, 3200);
+    const [bx, by] = tileCenter(3210, 2900);
+    const [cx, cy] = tileCenter(3210, 3050);
+    const wide = { ...viewOf(3210, 3050), minX: cx - 1000, maxX: cx + 1000, minY: cy - 1000, maxY: cy + 1000 };
+
+    /** What is drawn with the teleport so far along; the replay's clock waits where the player left. */
+    function drawn(progress, view = wide) {
+      const trail = trailOf(points);
+      expect(trail.model.kinds).toEqual(["walk", "teleport", "walk"]);
+      const ctx = recordingContext();
+      const mode = { kind: "replay", time: NOW - 120, hop: { jump: trail.geometry.jumps[0], progress } };
+      expect(drawTrail(ctx, view, trail, mode)).toBe(false);
+      return ctx;
+    }
+    // A circle with its middle there, as `arc` records it: [x, y, radius].
+    const around = (x, y) => (shape) =>
+      shape.path.length === 1 && shape.path[0].length === 3 && shape.path[0][0] === x && shape.path[0][1] === y;
+    const ghosts = (ctx) => ctx.fills.filter((fill) => fill.style === COLOR && fill.path.length === 1);
+    const rings = (ctx, x, y) => ctx.strokes.filter((stroke) => stroke.style === LIGHT && around(x, y)(stroke));
+    const arcs = (ctx) => ctx.strokes.filter((stroke) => stroke.style === LIGHT && stroke.dash.length);
+    const bursts = (ctx) => ctx.strokes.filter((stroke) => stroke.style === LIGHT && stroke.path.length === 16);
+
+    it("shrinks the ghost away where the player left, inside rings that close in", () => {
+      const early = drawn(0.06);
+      const late = drawn(0.24);
+      for (const ctx of [early, late]) {
+        expect(ghosts(ctx)).toHaveLength(1);
+        expect(around(ax, ay)(ghosts(ctx)[0])).toBe(true);
+        expect(rings(ctx, ax, ay).length).toBeGreaterThanOrEqual(1);
+        expect(rings(ctx, bx, by)).toHaveLength(0);
+        // Nothing of the way there yet, and no mark where they will land.
+        expect(arcs(ctx).every((stroke) => stroke.path.length < 2)).toBe(true);
+        expect(bursts(ctx)).toHaveLength(1);
+      }
+      const radius = (shape) => shape.path[0][2];
+      expect(radius(ghosts(late)[0])).toBeLessThan(radius(ghosts(early)[0]));
+      expect(radius(ghosts(early)[0])).toBeLessThan(6.5);
+      const widest = (ctx) => Math.max(...rings(ctx, ax, ay).map(radius));
+      expect(widest(late)).toBeLessThan(widest(early));
+      expect(widest(late)).toBeGreaterThan(radius(ghosts(late)[0]));
+    });
+
+    it("draws the arc as far as the teleport has got, with a spark at its head and no ghost", () => {
+      const ctx = drawn(0.5);
+      expect(ghosts(ctx)).toHaveLength(0);
+      const arc = arcs(ctx).pop().path;
+      expect(arc[0]).toEqual([ax, ay]);
+      const head = arc[arc.length - 1];
+      expect(head[1]).toBeGreaterThan(ay);
+      expect(head[1]).toBeLessThan(by);
+      const spark = ctx.fills.filter((fill) => fill.style === LIGHT && fill.path.length === 1).pop();
+      expect(spark.path[0][0]).toBeCloseTo(head[0], 3);
+      expect(spark.path[0][1]).toBeCloseTo(head[1], 3);
+      expect(bursts(ctx)).toHaveLength(1);
+
+      const further = arcs(drawn(0.6)).pop().path;
+      expect(further[further.length - 1][1]).toBeGreaterThan(head[1]);
+    });
+
+    it("grows the ghost back where the player landed, inside rings that open up", () => {
+      const early = drawn(0.76);
+      const late = drawn(0.94);
+      for (const ctx of [early, late]) {
+        expect(ghosts(ctx)).toHaveLength(1);
+        expect(around(bx, by)(ghosts(ctx)[0])).toBe(true);
+        expect(rings(ctx, bx, by).length).toBeGreaterThanOrEqual(1);
+        expect(rings(ctx, ax, ay)).toHaveLength(0);
+        const arc = arcs(ctx).pop().path;
+        expect(arc[arc.length - 1]).toEqual([bx, by]);
+        expect(bursts(ctx)).toHaveLength(2);
+      }
+      const radius = (shape) => shape.path[0][2];
+      expect(radius(ghosts(late)[0])).toBeGreaterThan(radius(ghosts(early)[0]));
+      const widest = (ctx) => Math.max(...rings(ctx, bx, by).map(radius));
+      expect(widest(late)).toBeGreaterThan(widest(early));
+    });
+
+    it("leaves a teleport that isn't the one played out as the time has it", () => {
+      const trail = trailOf([...points, at(3220, 2600, -1), at(3230, 2600, -2)]);
+      const [first, second] = trail.geometry.jumps;
+      expect(second.kind).toBe("teleport");
+      const ctx = recordingContext();
+      drawTrail(ctx, wide, trail, { kind: "replay", time: second.tA, hop: { jump: second, progress: 0.1 } });
+      // The first is long over: both its ends are marked; the second has only begun.
+      expect(bursts(ctx)).toHaveLength(3);
+      expect(arcs(ctx).some((stroke) => stroke.path.length > 20)).toBe(true);
+      expect(first.tB).toBeLessThan(second.tA);
+    });
+
+    it("shows nothing yet of what the player did after landing, even in the same second", () => {
+      // The hub's times are whole seconds: leaving, landing and the next step can share one.
+      const quick = [at(3200, 3200, 3), at(3210, 3200, 2), at(3210, 2900, 2), at(3214, 2900, 2), at(3220, 2900, 0)];
+      const trail = trailOf(quick);
+      expect(trail.model.kinds).toEqual(["walk", "teleport", "walk", "walk"]);
+      const bright = (mode) => {
+        const ctx = recordingContext();
+        drawTrail(ctx, wide, trail, mode);
+        return inColor(ctx).filter((stroke) => stroke.alpha > 0.9 && stroke.path.some(([, y]) => y === by));
+      };
+      const hop = { jump: trail.geometry.jumps[0], progress: 0.1 };
+      expect(bright({ kind: "replay", time: NOW - 120, hop })).toHaveLength(0);
+      expect(bright({ kind: "replay", time: NOW - 120, hop: null }).length).toBeGreaterThan(0);
+    });
+
+    it("skips what is off screen", () => {
+      const ctx = drawn(0.15, viewOf(1200, 1200));
+      expect(ctx.strokes).toHaveLength(0);
+      expect(ctx.fills).toHaveLength(0);
+    });
+
+    it("leaves the canvas as it found it", () => {
+      for (const progress of [0.15, 0.5, 0.85]) {
+        const ctx = drawn(progress);
+        expect(ctx.depth).toBe(0);
+        expect(ctx.getLineDash()).toEqual([]);
+        expect(ctx.globalAlpha).toBe(1);
+      }
+    });
+  });
 });

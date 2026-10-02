@@ -45,7 +45,7 @@ hub's answer (`via`, D-103), so the map doesn't guess teleports:
 | `move` | A line: a walk, stairs when the floor differs, a sail when both points are on a boat |
 | `entrance` | A ring at both ends, no line |
 | `house` | The next room of a player-owned house: no line and no arc, a small house where the player came in. The replay doesn't hold there and the timeline has no tick for it |
-| `teleport` | A dashed arc with a burst at both ends; a stub at each end when the other end is on another part of the map |
+| `teleport` | A dashed arc with a burst at both ends; a stub at each end when the other end is on another part of the map. The replay stops for it and plays it out |
 | `gap` | A dotted link: nothing is known about what happened |
 | none | The first point of an answer, a label this server doesn't know, or a hub from before D-103. The map then guesses from distance and time, as it does for the positions it sees live between two reads of the trail |
 
