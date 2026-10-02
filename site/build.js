@@ -12,7 +12,7 @@ if (productionMode) {
 
 const mapJsonPlugin = {
   name: 'mapTilesJson',
-  setup(build) {
+  setup() {
     const mapImageFiles = fs.readdirSync("public/map").filter((file) => file.endsWith('.webp')).map((file) => path.basename(file, '.webp'));
 
     const tiles = [[], [], [], []];
@@ -107,7 +107,7 @@ const htmlBuildPlugin = {
       const cssReadResults = await Promise.all(cssFiles.map((cssFile) => fs.promises.readFile(cssFile, "utf8")));
       let css = cssReadResults.join('');
 
-      for (imagePath of imagesToInline) {
+      for (const imagePath of imagesToInline) {
         const imageData = await fs.promises.readFile(`public/${imagePath}`, "base64");
         css = css.replace(imagePath, `data:image/png;base64,${imageData}`);
       }
@@ -177,7 +177,7 @@ if (watch) {
     ignorePermissionErrors: true,
     ignored: ".#*"
   });
-  watcher.on('change', (event, path) => {
+  watcher.on('change', () => {
     build();
   });
 }

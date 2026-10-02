@@ -75,7 +75,7 @@ export class AdminPortal extends BaseElement {
       if (!response.ok) return;
       const status = await response.json();
       this.renderHubStatus(container, status);
-    } catch (e) {
+    } catch {
       // The box stays empty.
     }
   }
@@ -129,7 +129,7 @@ export class AdminPortal extends BaseElement {
               ? ""
               : ". Nobody can sign in with a personal key: the hub only tells a service key who is a member.");
         }
-      } catch (e) {
+      } catch {
         result.textContent = "The test request failed.";
       }
       button.disabled = false;
@@ -144,7 +144,7 @@ export class AdminPortal extends BaseElement {
       if (!response.ok) return;
       const players = await response.json();
       this.renderPlayers(players);
-    } catch (e) {
+    } catch {
       // The list stays as it is.
     }
   }
@@ -221,7 +221,7 @@ export class AdminPortal extends BaseElement {
           ? await api.adminDeletePlayer(playerName)
           : await api.adminSetPlayerHidden(playerName, action === "hide");
       if (response.ok) this.loadPlayers();
-    } catch (e) {
+    } catch {
       // The list stays as it is.
     }
   }

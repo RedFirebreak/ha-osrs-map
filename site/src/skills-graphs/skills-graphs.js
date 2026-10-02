@@ -175,7 +175,7 @@ export class SkillsGraphs extends BaseElement {
         .filter(known)
         .slice(0, DEFAULT_GRAPH_PLAYERS);
       if (names.length > 0) return names;
-    } catch (err) {
+    } catch {
       // Fall back to the players with the most XP below.
     }
     return sortMembers([...groupData.members.values()], "xp")

@@ -13,7 +13,7 @@ vi.mock("../src/rs-tooltip/tooltip-manager", () => ({
   },
 }));
 
-import { CanvasMap, ICON_SPRITE_SIZE } from "../src/canvas-map/canvas-map";
+import { ICON_SPRITE_SIZE } from "../src/canvas-map/canvas-map";
 import { GAME_TILES_PER_MAP_TILE } from "../src/canvas-map/map-space";
 import { centerOn as centerCameraOn, createMap as createMapInstance } from "./helpers/map";
 import { GroupData } from "../src/data/group-data";
