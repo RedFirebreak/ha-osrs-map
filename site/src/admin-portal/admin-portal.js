@@ -177,8 +177,8 @@ export class AdminPortal extends BaseElement {
     const presence = player.online
       ? "online"
       : player.last_seen
-      ? `offline · ${relativeTime(player.last_seen)}`
-      : "offline";
+        ? `offline · ${relativeTime(player.last_seen)}`
+        : "offline";
     const seen = badge(
       "time",
       presence,
@@ -187,7 +187,7 @@ export class AdminPortal extends BaseElement {
         lastData ? `Last data: ${lastData.toLocaleString()}` : "",
       ]
         .filter(Boolean)
-        .join("\n")
+        .join("\n"),
     );
     seen.classList.toggle("admin-portal__badge--online", Boolean(player.online));
     actions.append(seen);
@@ -210,7 +210,7 @@ export class AdminPortal extends BaseElement {
     if (
       action === "delete" &&
       !window.confirm(
-        `Are you sure you want to delete player '${playerName}'? All player data will be permanently deleted.`
+        `Are you sure you want to delete player '${playerName}'? All player data will be permanently deleted.`,
       )
     ) {
       return;

@@ -1392,7 +1392,7 @@ describe("CanvasMap.drawLocations with linked icon highlights", () => {
     const expectedCenterX = Math.round(canvasX - shift) + destinationSize / 2;
     const expectedCenterY = Math.round(canvasY - shift) + destinationSize / 2;
     const hasHighlight = arcCalls.some(
-      ([x, y, r]) => x === expectedCenterX && y === expectedCenterY && r === expectedRadius
+      ([x, y, r]) => x === expectedCenterX && y === expectedCenterY && r === expectedRadius,
     );
     expect(hasHighlight).toBe(true);
   });
@@ -1587,7 +1587,7 @@ describe("CanvasMap trails", () => {
       Object.fromEntries(
         map.eventLayer.markers
           .visible({ filters, now, replayTime: map.trailLayer.replayTime })
-          .map((marker) => [marker.id, marker])
+          .map((marker) => [marker.id, marker]),
       );
 
     it("are dim until the replay comes to them", () => {
