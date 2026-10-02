@@ -5,6 +5,8 @@ import { colorForName } from "./player-colors";
 import { regionForMember } from "./regions";
 
 const memberInventoryFields = ["inventory", "equipment"];
+/** What a player shares by category; the poll says when one is no longer shared. */
+const sharedSections = ["stats", "coordinates", "skills", ...memberInventoryFields];
 
 export class MemberData {
   constructor(name) {
@@ -47,8 +49,19 @@ export class MemberData {
     return changed;
   }
 
+  /**
+   * Applies the sections of a poll: one that is undefined is left as it is,
+   * one that is null is dropped (the player no longer shares it). Returns the
+   * names of the sections that changed.
+   */
   update(memberData) {
     let updatedAttributes = new Set();
+
+    for (const section of sharedSections) {
+      if (memberData[section] !== null) continue;
+      this.drop(section);
+      updatedAttributes.add(section);
+    }
 
     if (memberData.stats) {
       this.stats = memberData.stats;
@@ -58,7 +71,6 @@ export class MemberData {
 
     if (memberData.meta) {
       this.meta = memberData.meta;
-      this.publishUpdate("meta");
       updatedAttributes.add("meta");
     }
 
@@ -86,7 +98,31 @@ export class MemberData {
       updatedAttributes.add(field);
     }
 
+    // Last: `meta` says what the player shares, and whoever hears of a change
+    // there (the profile draws itself again) finds this poll's sections in place.
+    if (memberData.meta) this.publishUpdate("meta");
+
     return updatedAttributes;
+  }
+
+  /**
+   * Forgets a section and what was worked out from it. The map is told that
+   * the position is gone; for the rest nothing is published: a component that
+   * shows the section is taken away by whoever put it there (the profile, when
+   * what the player shares changes), and one made later finds nothing to show.
+   */
+  drop(section) {
+    this[section] = undefined;
+    pubsub.unpublish(`${section}:${this.name}`);
+    if (section === "coordinates") {
+      this.updateRegion();
+      pubsub.publish("coordinates", this);
+    } else if (section === "skills") {
+      this.combatLevel = undefined;
+      for (const skillName of Object.values(SkillName)) pubsub.unpublish(`${skillName}:${this.name}`);
+    } else if (memberInventoryFields.includes(section)) {
+      this.itemQuantities[section] = new Map();
+    }
   }
 
   /** Names the place the member is at. Returns whether it changed. */

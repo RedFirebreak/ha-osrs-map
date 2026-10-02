@@ -20,6 +20,17 @@ describe("pubsub", () => {
     expect(received).toEqual([["map"]]);
   });
 
+  it("has nothing to replay once a topic is unpublished", () => {
+    pubsub.publish("inventory:Alice", ["whip"]);
+    pubsub.unpublish("inventory:Alice");
+
+    const received = [];
+    pubsub.subscribe("inventory:Alice", (...args) => received.push(args));
+
+    expect(received).toEqual([]);
+    expect(pubsub.getMostRecent("inventory:Alice")).toBeUndefined();
+  });
+
   it("does not notify after unsubscribe", () => {
     const received = [];
     const subscriber = (...args) => received.push(args);

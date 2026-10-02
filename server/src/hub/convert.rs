@@ -1,6 +1,6 @@
 //! Converts hub snapshot accounts into the member arrays the site understands,
 //! plus the display details (`HubMeta`) the site shows next to them.
-use crate::hub::models::{HubAccount, HubItems};
+use crate::hub::models::{HubAccount, HubItems, HubSkills};
 use crate::models::MemberData;
 use crate::osrs::{equipment_slot_index, skill_index, SKILL_ORDER};
 use serde::{Deserialize, Serialize};
@@ -42,22 +42,25 @@ pub(crate) struct HubMeta {
 
 impl HubMeta {
     /// On a special world the hub's totals and item values describe that
-    /// world, so the main game's values from before are kept.
+    /// world, so the main game's values from before are kept, for as long as
+    /// their category is shared.
     fn from_account(account: &HubAccount, previous: Option<&HubMeta>) -> Self {
         let special_world = account.special_world.unwrap_or(false);
-        let main_game = |current: Option<i64>, pick: fn(&HubMeta) -> Option<i64>| {
-            if special_world {
-                previous.and_then(pick)
-            } else {
-                current
-            }
-        };
+        let main_game =
+            |category: &str, current: Option<i64>, pick: fn(&HubMeta) -> Option<i64>| {
+                if special_world && shares(account, category) {
+                    previous.and_then(pick)
+                } else {
+                    current
+                }
+            };
         HubMeta {
             account_type: account.account_type,
             type_label: account.type_label.clone(),
             owner: account.owner.as_ref().and_then(|owner| owner.name.clone()),
             categories: account.categories.clone(),
             total_level: main_game(
+                STATS,
                 account
                     .skills
                     .as_ref()
@@ -65,14 +68,17 @@ impl HubMeta {
                 |meta| meta.total_level,
             ),
             overall_xp: main_game(
+                STATS,
                 account.skills.as_ref().and_then(|skills| skills.overall_xp),
                 |meta| meta.overall_xp,
             ),
             inventory_value: main_game(
+                INVENTORY,
                 account.inventory.as_ref().and_then(|items| items.value),
                 |meta| meta.inventory_value,
             ),
             equipment_value: main_game(
+                EQUIPMENT,
                 account.equipment.as_ref().and_then(|items| items.value),
                 |meta| meta.equipment_value,
             ),
@@ -88,8 +94,24 @@ impl HubMeta {
     }
 }
 
-/// The member arrays built from one hub account. `None` means the hub did not
-/// send that section (category not readable, or never sent by the plugin).
+/// The hub's categories, each with the section it lets the key read.
+const ACTIVITY: &str = "activity";
+const LOCATION_LIVE: &str = "location_live";
+const STATS: &str = "stats";
+const INVENTORY: &str = "inventory";
+const EQUIPMENT: &str = "equipment";
+
+/// Whether the key may read a category of the account.
+fn shares(account: &HubAccount, category: &str) -> bool {
+    account.categories.iter().any(|shared| shared == category)
+}
+
+/// The member arrays built from one hub account.
+///
+/// `None` means the hub has nothing new for a section the key may read (never
+/// sent by the plugin, a stale location, a special world): what the map has
+/// stays. An empty section means the key may not read its category, because
+/// the owner doesn't share it (any more): it replaces what the map had.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct MemberSections {
     pub stats: Option<Vec<i32>>,
@@ -104,38 +126,35 @@ impl MemberSections {
     /// `previous` is what was sent for the account before, if anything.
     pub(crate) fn from_account(account: &HubAccount, previous: Option<&MemberSections>) -> Self {
         let special_world = account.special_world.unwrap_or(false);
+        let shared = |category: &str, section: Option<Vec<i32>>| {
+            if shares(account, category) {
+                section
+            } else {
+                Some(Vec::new())
+            }
+        };
+        // Seasonal or other special worlds have their own XP and items;
+        // keep them from overwriting the main game's data.
+        let main_game = |section: Option<Vec<i32>>| section.filter(|_| !special_world);
         MemberSections {
-            stats: stats(account),
-            coordinates: account
-                .location
-                .as_ref()
-                .filter(|location| !location.stale)
-                .map(|location| vec![location.x, location.y, location.plane]),
-            // Seasonal or other special worlds have their own XP and items;
-            // keep them from overwriting the main game's data.
-            skills: if special_world {
-                None
-            } else {
-                account.skills.as_ref().map(|skills| {
-                    let mut xp = vec![0i32; SKILL_ORDER.len()];
-                    for skill in &skills.skills {
-                        if let (Some(index), Some(value)) = (skill_index(&skill.skill), skill.xp) {
-                            xp[index] = clamp_i32(value);
-                        }
-                    }
-                    xp
-                })
-            },
-            inventory: if special_world {
-                None
-            } else {
-                account.inventory.as_ref().map(inventory)
-            },
-            equipment: if special_world {
-                None
-            } else {
-                account.equipment.as_ref().map(equipment)
-            },
+            stats: shared(ACTIVITY, stats(account)),
+            coordinates: shared(
+                LOCATION_LIVE,
+                account
+                    .location
+                    .as_ref()
+                    .filter(|location| !location.stale)
+                    .map(|location| vec![location.x, location.y, location.plane]),
+            ),
+            skills: shared(STATS, main_game(account.skills.as_ref().map(skills))),
+            inventory: shared(
+                INVENTORY,
+                main_game(account.inventory.as_ref().map(inventory)),
+            ),
+            equipment: shared(
+                EQUIPMENT,
+                main_game(account.equipment.as_ref().map(equipment)),
+            ),
             meta: Some(HubMeta::from_account(
                 account,
                 previous.and_then(|previous| previous.meta.as_ref()),
@@ -227,6 +246,17 @@ fn stats(account: &HubAccount) -> Option<Vec<i32>> {
     ])
 }
 
+/// The XP of every skill, in the order of `SKILL_ORDER`.
+fn skills(skills: &HubSkills) -> Vec<i32> {
+    let mut xp = vec![0i32; SKILL_ORDER.len()];
+    for skill in &skills.skills {
+        if let (Some(index), Some(value)) = (skill_index(&skill.skill), skill.xp) {
+            xp[index] = clamp_i32(value);
+        }
+    }
+    xp
+}
+
 /// 28 inventory slots as id/quantity pairs. Items are placed by their
 /// `inventory_slot` when the hub sends one (plugin 1.5.1 and later), otherwise
 /// in the order the hub sends them.
@@ -282,13 +312,17 @@ mod tests {
     }
 
     fn full_account() -> HubAccount {
-        account(serde_json::json!({
+        account(full_account_json())
+    }
+
+    fn full_account_json() -> serde_json::Value {
+        serde_json::json!({
             "id": "oC8RsqiTuyak",
             "name": "Alpha Main",
             "type": 0,
             "type_label": "Normal",
             "owner": {"name": "Owner", "discord_id": "1"},
-            "categories": ["activity", "stats", "equipment", "inventory"],
+            "categories": ["stats", "activity", "location_live", "equipment", "inventory"],
             "online": true,
             "world": 302,
             "special_world": false,
@@ -312,7 +346,7 @@ mod tests {
                 {"id": 995, "name": "Coins", "quantity": 5000000000i64, "ge_price": 1, "ha_price": 1, "equipment_slot": null},
                 {"id": 385, "name": "Shark", "quantity": 1, "ge_price": 1, "ha_price": 1, "equipment_slot": null}
             ]}
-        }))
+        })
     }
 
     #[test]
@@ -351,7 +385,7 @@ mod tests {
         assert_eq!(meta.game_state.as_deref(), Some("LOGGED_IN"));
         let json = serde_json::to_value(&meta).unwrap();
         assert_eq!(json["type"], 0);
-        assert_eq!(json["categories"][0], "activity");
+        assert_eq!(json["categories"][0], "stats");
     }
 
     #[test]
@@ -405,17 +439,97 @@ mod tests {
         assert_eq!(sections.equipment, None);
     }
 
+    /// The account as the hub sends it once the owner stopped sharing a
+    /// category: the category is off the list and its fields are left out.
+    fn without_category(category: &str, fields: &[&str]) -> HubAccount {
+        let mut json = full_account_json();
+        let object = json.as_object_mut().unwrap();
+        for field in fields {
+            object.remove(*field);
+        }
+        object["categories"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|shared| shared != category);
+        account(json)
+    }
+
     #[test]
-    fn missing_categories_produce_no_sections() {
+    fn a_category_that_is_no_longer_shared_empties_its_section() {
+        let before = MemberSections::from_account(&full_account(), None);
+        let empty = Some(Vec::new());
+
+        let hidden = without_category("location_live", &["location"]);
+        let sections = MemberSections::from_account(&hidden, Some(&before));
+        assert_eq!(sections.coordinates, empty);
+        assert!(section_changed(
+            Some(&before),
+            &sections,
+            Section::Coordinates
+        ));
+        assert_eq!(sections.stats, before.stats, "the rest is as it was");
+        assert_eq!(sections.inventory, before.inventory);
+
+        let hidden = without_category("inventory", &["inventory"]);
+        assert_eq!(
+            MemberSections::from_account(&hidden, Some(&before)).inventory,
+            empty
+        );
+        let hidden = without_category("equipment", &["equipment"]);
+        assert_eq!(
+            MemberSections::from_account(&hidden, Some(&before)).equipment,
+            empty
+        );
+        let hidden = without_category("stats", &["skills"]);
+        assert_eq!(
+            MemberSections::from_account(&hidden, Some(&before)).skills,
+            empty
+        );
+        let hidden = without_category(
+            "activity",
+            &["online", "world", "special_world", "hp", "prayer"],
+        );
+        assert_eq!(
+            MemberSections::from_account(&hidden, Some(&before)).stats,
+            empty
+        );
+    }
+
+    #[test]
+    fn a_shared_section_the_hub_has_nothing_for_is_left_alone() {
+        let mut account = full_account();
+        account.location = None;
+        account.inventory = None;
+        let sections = MemberSections::from_account(&account, None);
+        assert_eq!(sections.coordinates, None);
+        assert_eq!(sections.inventory, None);
+    }
+
+    #[test]
+    fn a_special_world_does_not_keep_what_is_no_longer_shared() {
+        let before = MemberSections::from_account(&full_account(), None);
+        let mut account = without_category("inventory", &["inventory"]);
+        account.special_world = Some(true);
+        let sections = MemberSections::from_account(&account, Some(&before));
+        assert_eq!(sections.inventory, Some(Vec::new()));
+        assert_eq!(sections.equipment, None, "still shared: the main game's");
+        let meta = sections.meta.unwrap();
+        assert_eq!(meta.inventory_value, None);
+        assert_eq!(meta.equipment_value, Some(2500000));
+    }
+
+    #[test]
+    fn an_account_that_shares_nothing_has_empty_sections() {
         let account = account(serde_json::json!({
             "id": "abc", "name": "Private", "type": 0, "categories": []
         }));
         let sections = MemberSections::from_account(&account, None);
-        assert_eq!(sections.stats, None);
-        assert_eq!(sections.coordinates, None);
-        assert_eq!(sections.skills, None);
-        assert_eq!(sections.inventory, None);
-        assert_eq!(sections.equipment, None);
+        let empty = Some(Vec::new());
+        assert_eq!(sections.stats, empty);
+        assert_eq!(sections.coordinates, empty);
+        assert_eq!(sections.skills, empty);
+        assert_eq!(sections.inventory, empty);
+        assert_eq!(sections.equipment, empty);
         assert!(sections.meta.unwrap().categories.is_empty());
     }
 

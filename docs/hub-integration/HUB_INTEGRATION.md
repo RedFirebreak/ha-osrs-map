@@ -40,6 +40,22 @@ A player who hasn't changed the hub's defaults shares `stats`, `events`, `activi
 with the guild. `inventory`, `equipment` and `location_history` are private by default, so their profile
 tabs and trails show "not shared". The map reads `categories` to tell "not shared" from "empty".
 
+What the key may not read, the map doesn't hold. A field the hub leaves out because its category is
+off the account's `categories` empties what the map stored for it, in the database and in
+`GET /api/members` (an empty array), and the site drops it: no marker, no items, no vitals.
+
+| Category        | What the map drops                 |
+| --------------- | ---------------------------------- |
+| `location_live` | the position                       |
+| `activity`      | hitpoints, prayer and world        |
+| `stats`         | the skills (the history is kept)   |
+| `inventory`     | the inventory and its value        |
+| `equipment`     | the equipment and its value        |
+
+A field of a category the key can read that has nothing new (a location the hub calls `stale` after a
+logout, a special world, something the plugin never sent) leaves what the map has: a player who logged
+out stays where they were last seen.
+
 ## Hub changes made for the map
 
 | Change | Hub decision | Where |

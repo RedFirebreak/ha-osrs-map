@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 /// A member's player data. As an update (to the batcher) a `None` field is
 /// left alone; in the poll response it means "unchanged since `from_time`".
+/// An empty array is a section the player doesn't share (any more): it is
+/// stored and sent like any other value, so it replaces what was there.
 #[derive(Deserialize, Serialize, Default, Debug)]
 pub struct MemberData {
     pub name: String,

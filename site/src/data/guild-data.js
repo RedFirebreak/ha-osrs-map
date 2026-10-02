@@ -159,10 +159,16 @@ export class GuildData {
     };
   }
 
+  /**
+   * Unpacks each section of the members of a poll. A section the poll leaves
+   * out stays undefined (unchanged); an empty one, which the backend sends for
+   * a category the player doesn't share (any more), becomes null.
+   */
   transformFromStorage(members) {
     for (const memberData of members) {
       for (const [fieldName, transform] of storageFieldTransformers) {
-        memberData[fieldName] = transform(memberData[fieldName]);
+        const stored = memberData[fieldName];
+        memberData[fieldName] = Array.isArray(stored) && stored.length === 0 ? null : transform(stored);
       }
     }
   }
