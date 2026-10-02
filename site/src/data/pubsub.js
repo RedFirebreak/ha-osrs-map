@@ -32,6 +32,11 @@ class PubSub {
     }
   }
 
+  /** Forgets the last value of a topic, so a later subscriber isn't handed it. */
+  unpublish(dataName) {
+    this.mostRecentPublish.delete(dataName);
+  }
+
   unpublishAll() {
     this.mostRecentPublish.clear();
   }

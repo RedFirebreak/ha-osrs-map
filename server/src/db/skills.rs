@@ -16,11 +16,13 @@ async fn aggregate_skills_for_period(
     period: AggregatePeriod,
     last_aggregation: &DateTime<Utc>,
 ) -> Result<(), ApiError> {
+    // Empty skills are skills the player no longer shares (see
+    // `hub::convert::MemberSections`): nothing to sample.
     let s = format!(
         r#"
 INSERT INTO guildmap.skills_{} (member_id, time, skills)
 SELECT member_id, date_trunc('{}', skills_last_update), skills FROM guildmap.members
-WHERE skills_last_update IS NOT NULL AND skills IS NOT NULL AND skills_last_update >= $1
+WHERE skills_last_update IS NOT NULL AND cardinality(skills) > 0 AND skills_last_update >= $1
 ON CONFLICT (member_id, time)
 DO UPDATE SET skills=excluded.skills;
 "#,
@@ -91,7 +93,9 @@ SELECT last_aggregation FROM guildmap.aggregation_info WHERE type='skills'"#,
     Ok(last_aggregation)
 }
 
-pub(crate) async fn aggregate_skills(client: &mut Client) -> Result<(), ApiError> {
+/// Samples the skills that changed since the last time into the history of
+/// each period.
+pub async fn aggregate_skills(client: &mut Client) -> Result<(), ApiError> {
     let last_aggregation = get_last_skills_aggregation(client).await?;
 
     let transaction = client.transaction().await?;

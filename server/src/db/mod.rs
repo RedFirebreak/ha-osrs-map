@@ -9,4 +9,5 @@ pub use hub::*;
 pub use members::*;
 pub use schema::*;
 pub(crate) use sessions::*;
+pub use skills::aggregate_skills;
 pub(crate) use skills::*;

@@ -23,7 +23,8 @@ pub(crate) const ONLINE_CONFIRMATION: &str = "interval '5 minutes'";
 
 /// The member columns the sync fills, with their SQL types. Each has a
 /// `<column>_last_update`: when the map stored a new value (see the update
-/// batcher, which writes them in this order).
+/// batcher, which writes them in this order). NULL is "never received";
+/// an empty array is "the player doesn't share this".
 pub(crate) const MEMBER_COLUMNS: [(&str, &str); 6] = [
     ("stats", "int4[]"),
     ("coordinates", "int4[]"),

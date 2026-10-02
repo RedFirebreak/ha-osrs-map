@@ -88,6 +88,70 @@ describe("guild-data", () => {
     expect(data.inventoryQuantityForItem(4151, "Nobody", "inventory")).toBe(0);
   });
 
+  it("drops the sections a player no longer shares", () => {
+    const data = new GuildData();
+    const skills = Object.keys(SkillName)
+      .filter((name) => name !== SkillName.Overall)
+      .map(() => 13034431);
+    data.update({
+      cursor: "2026-09-30T10:00:00.000Z",
+      roster: roster(["Bob"]),
+      members: [
+        {
+          name: "Bob",
+          stats: [50, 99, 25, 70, 0, 0, 328],
+          coordinates: [3222, 3218, 0],
+          skills,
+          inventory: [4151, 1],
+          equipment: [4151, 1],
+        },
+      ],
+    });
+    const bob = data.members.get("Bob");
+    expect(bob.coordinates).toEqual({ x: 3222, y: 3219, plane: 0 });
+    expect(bob.combatLevel).toBe(126);
+
+    const changed = [];
+    const onMap = [];
+    pubsub.subscribe("roster-changed", (names) => changed.push([...names]), false);
+    pubsub.subscribe("coordinates", (member) => onMap.push(member.coordinates), false);
+    // The backend sends an empty section for a category the owner made private.
+    data.update({
+      cursor: "2026-09-30T10:00:02.000Z",
+      roster: roster(["Bob"]),
+      members: [{ name: "Bob", stats: [], coordinates: [], skills: [], inventory: [], equipment: [] }],
+    });
+
+    expect(bob.coordinates).toBeUndefined();
+    expect(bob.stats).toBeUndefined();
+    expect(bob.skills).toBeUndefined();
+    expect(bob.combatLevel).toBeUndefined();
+    expect(bob.inventory).toBeUndefined();
+    expect(bob.equipment).toBeUndefined();
+    expect(data.inventoryQuantityForItem(4151, "Bob", "inventory")).toBe(0);
+    expect(data.inventoryQuantityForItem(4151, "Bob", "equipment")).toBe(0);
+    expect(changed).toEqual([["Bob"]]);
+    expect(onMap).toEqual([undefined]);
+  });
+
+  it("keeps a section the poll leaves out", () => {
+    const data = new GuildData();
+    data.update({
+      cursor: "2026-09-30T10:00:00.000Z",
+      roster: roster(["Bob"]),
+      members: [{ name: "Bob", coordinates: [3222, 3218, 0], inventory: [4151, 1] }],
+    });
+    data.update({
+      cursor: "2026-09-30T10:00:02.000Z",
+      roster: roster(["Bob"]),
+      members: [{ name: "Bob", stats: [50, 99, 25, 70, 0, 0, 328] }],
+    });
+
+    const bob = data.members.get("Bob");
+    expect(bob.coordinates).toEqual({ x: 3222, y: 3219, plane: 0 });
+    expect(bob.inventory[0].id).toBe(4151);
+  });
+
   it("returns the server's cursor", () => {
     const data = new GuildData();
     const next = data.update({

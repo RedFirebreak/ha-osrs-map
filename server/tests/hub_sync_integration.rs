@@ -397,6 +397,109 @@ async fn presence_follows_the_hub() {
     );
 }
 
+/// The account as the hub sends it once the owner made a category private:
+/// the category is off the list and its field is left out.
+fn stop_sharing(account: &mut Value, category: &str, field: &str) {
+    account.as_object_mut().unwrap().remove(field);
+    account["categories"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|shared| shared != category);
+}
+
+#[tokio::test]
+async fn what_the_owner_stops_sharing_is_dropped() {
+    let _guard = TEST_MUTEX.lock().await;
+    let mut h = harness().await;
+    h.hub.lock().unwrap().accounts = vec![online_account("acc-alpha", "Alpha")];
+    h.poll().await.unwrap();
+    let alpha = h.member("Alpha").await.unwrap();
+    assert_eq!(alpha.coordinates, Some(vec![3164, 3487, 0]));
+    assert!(alpha.inventory.is_some_and(|items| !items.is_empty()));
+    let cursor = h.cursor().await;
+
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    {
+        let account = &mut h.hub.lock().unwrap().accounts[0];
+        stop_sharing(account, "location_live", "location");
+        stop_sharing(account, "inventory", "inventory");
+    }
+    h.poll().await.unwrap();
+
+    let alpha = h.member("Alpha").await.unwrap();
+    assert_eq!(alpha.coordinates, Some(vec![]), "no position any more");
+    assert_eq!(alpha.inventory, Some(vec![]), "no inventory any more");
+    assert_eq!(&alpha.equipment.unwrap()[6..8], &[4151, 1], "still shared");
+    assert_eq!(alpha.stats, Some(vec![80, 99, 70, 99, 0, 0, 302]));
+
+    let alpha = h
+        .member_since("Alpha", cursor)
+        .await
+        .expect("a site that is already polling is told");
+    assert_eq!(alpha.coordinates, Some(vec![]));
+    assert_eq!(alpha.inventory, Some(vec![]));
+
+    // Shared again: the map shows where the player is now.
+    {
+        let account = &mut h.hub.lock().unwrap().accounts[0];
+        account["categories"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("location_live"));
+        account["location"] = json!({"x": 3200, "y": 3200, "plane": 0, "stale": false});
+    }
+    h.poll().await.unwrap();
+    assert_eq!(
+        h.member("Alpha").await.unwrap().coordinates,
+        Some(vec![3200, 3200, 0])
+    );
+}
+
+#[tokio::test]
+async fn a_player_who_logged_out_keeps_the_last_position() {
+    let _guard = TEST_MUTEX.lock().await;
+    let mut h = harness().await;
+    h.hub.lock().unwrap().accounts = vec![online_account("acc-alpha", "Alpha")];
+    h.poll().await.unwrap();
+
+    {
+        let account = &mut h.hub.lock().unwrap().accounts[0];
+        account["online"] = json!(false);
+        account["location"]["stale"] = json!(true);
+    }
+    h.poll().await.unwrap();
+    assert_eq!(
+        h.member("Alpha").await.unwrap().coordinates,
+        Some(vec![3164, 3487, 0]),
+        "the location is still shared, there just is no newer one"
+    );
+}
+
+#[tokio::test]
+async fn skills_that_are_no_longer_shared_leave_the_skill_history_alone() {
+    let _guard = TEST_MUTEX.lock().await;
+    let mut h = harness().await;
+    h.hub.lock().unwrap().accounts = vec![online_account("acc-alpha", "Alpha")];
+    h.poll().await.unwrap();
+    {
+        let mut client = h.pool.get().await.unwrap();
+        db::aggregate_skills(&mut client).await.unwrap();
+    }
+
+    stop_sharing(&mut h.hub.lock().unwrap().accounts[0], "stats", "skills");
+    h.poll().await.unwrap();
+    assert_eq!(h.member("Alpha").await.unwrap().skills, Some(vec![]));
+    {
+        let mut client = h.pool.get().await.unwrap();
+        db::aggregate_skills(&mut client).await.unwrap();
+    }
+
+    let samples: Vec<i32> = h
+        .scalar("SELECT array_agg(cardinality(skills)) FROM guildmap.skills_day")
+        .await;
+    assert_eq!(samples, [24], "the sample from before stays as it was");
+}
+
 #[tokio::test]
 async fn hidden_members_are_left_alone_until_shown_again() {
     let _guard = TEST_MUTEX.lock().await;

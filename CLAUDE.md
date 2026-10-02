@@ -38,13 +38,12 @@ rule each from the plugin to this map. Before calling a change done, run what fo
 | The hub client, sync or conversion (`server/src/hub/`) | `up map` and `smoke map`, then `up full` and `smoke` | The map shows the mock hub's players, and a player sent through a real hub at the position it was sent. If only one of the two passes, the mock hub and the hub disagree |
 | Login, sessions, the admin gate (`discord_routes.rs`, `auth_*.rs`, `hub/members.rs`) | `chain auth`, with `up map` and with `up full` | Admin, member and stranger get what they should; with a real hub, someone it has never seen is turned away |
 | The roster, online and offline | `chain presence` (needs `up full`) | A client that stops without a logout goes offline here about a minute later |
-| How a player's position is taken over from the hub | `chain privacy` (needs `up full`) | Where a player goes while their location is private in the hub never shows here |
+| How a player's position, or any other category, is taken over from the hub | `chain privacy` (needs `up full`) | A location made private in the hub is dropped here, and where the player goes meanwhile never shows |
 | The site only | `restart map`, then look at http://localhost:4100/guild | |
 
 `node ../osrs-dev-stack/stack.mjs smoke` and `… chain <name>` print `PASS` or `FAIL` per step and exit
 1 on a failure. A `FAIL` is yours to explain before going on. A `KNOWN` line is a gap that is already
-written down in the stack's README. One is about this repository: the map keeps showing the last
-position of a player whose location was made private in the hub.
+written down in the stack's README.
 
 ## Before committing
 

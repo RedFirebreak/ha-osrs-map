@@ -107,6 +107,14 @@ export class PlayerProfileView extends BaseElement {
     for (const topic of ["presence", "stats", "meta", "region"]) {
       this.subscribe(`${topic}:${this.playerName}`, () => this.updateHeader());
     }
+    // A tab shows what the player shares: draw it again when that changes.
+    this.shared = this.sharedNow();
+    this.subscribe(`meta:${this.playerName}`, () => {
+      const shared = this.sharedNow();
+      if (shared === this.shared) return;
+      this.shared = shared;
+      this.showTab(lastTab);
+    });
     this.subscribe("trails-changed", (trails) => {
       const on = trails.has(this.playerName);
       this.trailButton.classList.toggle("active", on);
@@ -123,6 +131,11 @@ export class PlayerProfileView extends BaseElement {
 
   get member() {
     return guildData.members.get(this.playerName);
+  }
+
+  /** The categories the player shares, as one string to compare. */
+  sharedNow() {
+    return this.member?.meta?.categories?.join() ?? null;
   }
 
   updateHeader() {
@@ -202,9 +215,11 @@ export class PlayerProfileView extends BaseElement {
   renderOverview() {
     const member = this.member;
     const vitals = this.section();
-    const stats = document.createElement("player-stats");
-    stats.setAttribute("player-name", this.playerName);
-    vitals.appendChild(stats);
+    if (shares(member, "activity")) {
+      const stats = document.createElement("player-stats");
+      stats.setAttribute("player-name", this.playerName);
+      vitals.appendChild(stats);
+    }
 
     const facts = el("dl", "player-profile-view__facts");
     const fact = (label, value) => {

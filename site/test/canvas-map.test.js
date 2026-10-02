@@ -328,6 +328,18 @@ describe("CanvasMap.handleUpdatedCoordinates", () => {
     map.handleUpdatedCoordinates({ name: "Alice", coordinates: {} });
     expect(map.playerMarkers.size).toBe(0);
   });
+
+  it("takes the marker away when the player no longer shares a location", () => {
+    const map = createMapInstance();
+    map.handleUpdatedCoordinates({ name: "Alice", coordinates: { x: 100, y: 200, plane: 0 } });
+    map.handleUpdatedCoordinates({ name: "Bob", coordinates: { x: 300, y: 400, plane: 0 } });
+    map.followPlayer("Alice");
+
+    map.handleUpdatedCoordinates({ name: "Alice", coordinates: undefined });
+
+    expect([...map.playerMarkers.keys()]).toEqual(["Bob"]);
+    expect(map.followingPlayer.name).toBeNull();
+  });
 });
 
 describe("CanvasMap.followPlayer", () => {

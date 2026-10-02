@@ -259,6 +259,10 @@ export class CanvasMap extends BaseElement {
       if (this.isGameTileInView(coordinates.x, coordinates.y, padPx)) {
         this.requestUpdate();
       }
+    } else if (this.playerMarkers.delete(member.name)) {
+      // The player no longer shares a location: the map doesn't keep the last one.
+      if (this.followingPlayer.name === member.name) this.stopFollowingPlayer();
+      this.requestUpdate();
     }
   }
 
