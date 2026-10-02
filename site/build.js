@@ -180,7 +180,8 @@ if (watch) {
   const chokidar = require("chokidar");
   const watcher = chokidar.watch("src", {
     ignorePermissionErrors: true,
-    ignored: ".#*",
+    // Editor lock files (".#name"). chokidar 4 and later take no globs here.
+    ignored: /(^|[/\\])\.#/,
   });
   watcher.on("change", () => {
     build();
