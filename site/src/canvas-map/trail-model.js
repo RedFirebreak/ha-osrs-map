@@ -3,19 +3,27 @@ import { eventKind, eventPlace, eventTier, eventTimeMs } from "../data/event-vie
 import { clockTime, shortDay } from "../data/format";
 
 // What a player's trail is, apart from how it is drawn: the points the hub
-// sampled (about one a minute) joined with the positions seen live, and what
-// happened between each two of them. Everything here is in the site's
-// coordinates (one tile north of what the plugin reports) and unix seconds.
+// has (every tile a player was on, and one a minute while they stand still)
+// joined with the positions seen live, and what happened between each two of
+// them. Everything here is in the site's coordinates (one tile north of what
+// the plugin reports) and unix seconds.
 //
-// A point is `{x, y, plane, t0, t1, boat, world, live?}`: the player was on
-// the tile from t0 to t1.
+// A point is `{x, y, plane, t0, t1, boat, world, via?, live?}`: the player was
+// on the tile from t0 to t1. `via` is how the hub says they got there from the
+// point before (move, entrance, house, teleport or gap; hub D-103).
 // The step from one point to the next is one of:
-//   walk      near enough to have been on foot
+//   walk      on foot
 //   stairs    the same, to another floor
 //   sail      both ends on a boat
 //   entrance  into or out of the underground, which the game puts 6400 tiles north
-//   teleport  further than anyone could have run, or to another part of the map
-//   unknown   a gap in the data, or far enough that it may have been either
+//   house     into the next room of a player-owned house: walked, but the
+//             rooms lie apart on the map
+//   teleport  anything else that wasn't walked
+//   unknown   a gap in the data
+// The hub's label decides. A point without one (seen live between two polls,
+// or from a hub that doesn't say) is judged by distance and time, where
+// teleport is "further than anyone could have run, or to another part of the
+// map" and unknown also "far enough that it may have been either".
 
 const TICK_S = 0.6;
 
@@ -25,11 +33,13 @@ const RUN_TILES_PER_S = 2 / TICK_S;
 // A guess: nothing says how fast a boat goes or what the plugin reports on one.
 const BOAT_TILES_PER_S = 2 * RUN_TILES_PER_S;
 
-// The hub keeps one sample per account per minute.
-const BUCKET_S = 60;
+// A player standing still keeps one point a minute, so the points of a trail
+// that wasn't thinned are never further apart than this without a gap.
+const IDLE_S = 60;
 
-// A sample's time is the start of its minute, so more time may have passed
-// than two samples say. Allowing the full minute would hide most teleports.
+// For points without a label. A hub that doesn't label dates a sample at the
+// start of its minute, so more time may have passed than two samples say.
+// Allowing the full minute would hide most teleports.
 const UNCERTAINTY_S = 20;
 
 const SLACK_TILES = 8;
@@ -43,11 +53,14 @@ const UNDERGROUND_OFFSET = 6400;
 const FLAG_BOAT = 1;
 const LIVE_MAX_POINTS = 240;
 const LIVE_MAX_AGE_S = 3600;
+// The server's codes for the hub's labels; 0 is "the hub didn't say".
+const VIA = [undefined, "move", "entrance", "house", "teleport", "gap"];
 
 /**
  * Reads a trail as the server sends it: `{step, points, worlds}` with points
- * `[x, y, plane, unixSeconds, dwell, flags]` (see the server's `trail_json`),
- * or the bare list of `[x, y, plane, unixSeconds]` an older server sends.
+ * `[x, y, plane, unixSeconds, dwell, flags, via]` (see the server's
+ * `trail_json`), or the bare list of `[x, y, plane, unixSeconds]` an older
+ * server sends.
  */
 export function decodeTrail(raw) {
   const rows = Array.isArray(raw) ? raw : raw?.points || [];
@@ -55,7 +68,7 @@ export function decodeTrail(raw) {
   const points = [];
   let world = null;
   let nextWorld = 0;
-  rows.forEach(([x, y, plane, time, dwell = 0, flags = 0], index) => {
+  rows.forEach(([x, y, plane, time, dwell = 0, flags = 0, via = 0], index) => {
     while (nextWorld < worlds.length && worlds[nextWorld][0] <= index) {
       world = worlds[nextWorld][1];
       nextWorld += 1;
@@ -66,9 +79,11 @@ export function decodeTrail(raw) {
     ) {
       return;
     }
-    points.push({ ...coordinates, t0: time - dwell, t1: time, boat: Boolean(flags & FLAG_BOAT), world });
+    const point = { ...coordinates, t0: time - dwell, t1: time, boat: Boolean(flags & FLAG_BOAT), world };
+    if (VIA[via]) point.via = VIA[via];
+    points.push(point);
   });
-  return { points, step: (!Array.isArray(raw) && raw?.step) || BUCKET_S };
+  return { points, step: (!Array.isArray(raw) && raw?.step) || IDLE_S };
 }
 
 /**
@@ -87,8 +102,28 @@ function distance(a, b, shiftY = 0) {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - (b.y + shiftY)));
 }
 
-/** What happened between two consecutive points; see the top of this file. */
+/** A step the hub calls a move: which kind of moving it was. */
+function moveKind(a, b) {
+  if (a.boat && b.boat) return "sail";
+  return a.plane !== b.plane ? "stairs" : "walk";
+}
+
+/**
+ * What happened between two consecutive points; see the top of this file.
+ * `gapS` is how far apart two points without a label may be before it is a
+ * gap in the data.
+ */
 export function classifyStep(a, b, gapS = GAP_S) {
+  switch (b.via) {
+    case "move":
+      return moveKind(a, b);
+    case "entrance":
+    case "house":
+    case "teleport":
+      return b.via;
+    case "gap":
+      return "unknown";
+  }
   const elapsed = Math.max(b.t0 - a.t1, 1);
   const speed = a.boat && b.boat ? BOAT_TILES_PER_S : RUN_TILES_PER_S;
   const sure = SURE_FRACTION * speed * elapsed + SLACK_TILES;
@@ -104,9 +139,7 @@ export function classifyStep(a, b, gapS = GAP_S) {
   const far = distance(a, b);
   if (far > speed * (elapsed + UNCERTAINTY_S) + SLACK_TILES) return "teleport";
   if (elapsed > gapS || far > sure) return "unknown";
-  if (a.boat && b.boat) return "sail";
-  if (a.plane !== b.plane) return "stairs";
-  return "walk";
+  return moveKind(a, b);
 }
 
 const CONNECTED = new Set(["walk", "stairs", "sail"]);
@@ -117,9 +150,9 @@ const CONNECTED = new Set(["walk", "stairs", "sail"]);
  * shares its end points with the walks around it; a run may be one point),
  * `jumps` the steps between runs (`{from, kind}`, from point `from` to the
  * next). `step` is the server's thinning stride, so that the wider spacing
- * of a thinned trail isn't taken for gaps.
+ * of a thinned trail isn't taken for gaps where the hub didn't label it.
  */
-export function buildTrailModel(points, { step = BUCKET_S } = {}) {
+export function buildTrailModel(points, { step = IDLE_S } = {}) {
   const gapS = Math.max(GAP_S, 3 * step);
   const kinds = [];
   for (let i = 0; i + 1 < points.length; i++) {
@@ -199,13 +232,16 @@ export function observeLive(
 
 /**
  * The hub's history followed by what was seen live since. The hub wins for
- * every minute it has sampled; `head` (`{x, y, plane, boat, world, t}`, where
- * the marker is while the player is online) is always the last point, so the
- * trail ends on the marker.
+ * the time it has points for: up to its last point when it labels them (they
+ * are dated to the tick then), and for the whole of that minute when it
+ * doesn't. `head` (`{x, y, plane, boat, world, t}`, where the marker is while
+ * the player is online) is always the last point, so the trail ends on the
+ * marker.
  */
 export function mergeTrail(history, live, head) {
   const merged = history.slice();
-  const cutoff = history.length ? history[history.length - 1].t1 + BUCKET_S : -Infinity;
+  const newest = history[history.length - 1];
+  const cutoff = newest ? newest.t1 + (newest.via ? 0 : IDLE_S) : -Infinity;
   // Two visits to a tile with an absence in between stay two points; the
   // marker of an online player continues the stay however long it has lasted.
   const append = (point, continues = point.t0 - merged[merged.length - 1]?.t1 <= GAP_S) => {
@@ -348,7 +384,7 @@ export function formatTrailTime(t0, t1, nowS = Date.now() / 1000) {
     if (!withDay || date.toDateString() === today) return clockTime(date);
     return `${shortDay(date)} ${clockTime(date)}`;
   };
-  if (t1 - t0 < BUCKET_S) return format(t1, true);
+  if (t1 - t0 < IDLE_S) return format(t1, true);
   const sameDay = new Date(t0 * 1000).toDateString() === new Date(t1 * 1000).toDateString();
   return `${format(t0, true)} – ${format(t1, !sameDay)}`;
 }

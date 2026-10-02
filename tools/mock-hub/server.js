@@ -9,9 +9,12 @@
 // never changed the hub's defaults, so its history endpoints answer 404.
 //
 // Serves what the map's backend asks the hub for, following the hub's
-// docs/API.md as of D-98: /me, /snapshot (ETag/If-None-Match, with
+// docs/API.md as of D-103: /me, /snapshot (ETag/If-None-Match, with
 // game_state; always in full, whatever `since` says), an account's /gains,
-// /sessions, /wealth and /equipment-history, the bulk /xp and /locations,
+// /sessions, /wealth and /equipment-history, the bulk /xp and /locations
+// (a point per game tick with `via`, `from`/`to`, 20,000 points at most and
+// `truncated`; MOCK_HUB_TRAIL=minute mimics a hub from before D-102: a point
+// a minute and no `via`),
 // /leaderboards/gains, /leaderboards/loot and /events (the cursor feed, and
 // with `from` a time range read newest first; types, accounts, min_value).
 // MOCK_HUB_EVENTS_RANGE=off mimics a hub from before the range read, which
@@ -26,7 +29,8 @@
 //
 // The first account follows a fixed 40-minute route instead (see `route`), with
 // everything a trail can show: a walk, teleports, a boat trip, a floor change,
-// a dungeon entrance, a death, a world hop and a logout, and the same events
+// a dungeon entrance, a death, a world hop, two rooms of a house and a logout,
+// and the same events
 // every lap: a level, a 14.5M drop, a collection log slot. MOCK_HUB_TRAIL_HOURS
 // sets how far back trails go (default 6; 720 gives enough to need thinning).
 const http = require("http");
@@ -39,6 +43,9 @@ const EVENT_EVERY_MS = parseInt(process.env.MOCK_HUB_EVENT_MS || "4000", 10);
 const TRAIL_HOURS = Math.max(1, parseInt(process.env.MOCK_HUB_TRAIL_HOURS || "6", 10));
 const EVENTS_RANGE = process.env.MOCK_HUB_EVENTS_RANGE !== "off";
 const MEMBERS_ENDPOINT = process.env.MOCK_HUB_MEMBERS !== "off";
+const MINUTE_TRAIL = process.env.MOCK_HUB_TRAIL === "minute";
+const TICK_MS = 600;
+const MAX_LOCATION_POINTS = 20_000;
 const DISCORD_AUTO = process.env.MOCK_DISCORD_AUTO || "";
 // The people the stand-in for Discord signs in as, and what the hub says of
 // them: an admin, a member, and someone who isn't in the guild.
@@ -160,7 +167,7 @@ function route(t) {
   // Teleport to Falador, walk to Port Sarim.
   if (p < 12) return at(2964 + (p - 8) * 19, 3378 - (p - 8) * 42);
   // Sail south.
-  if (p < 18) return at(3040 + (p - 12) * 20, 3200 - (p - 12) * 60, { boat: true });
+  if (p < 18) return at(3040 + (p - 12) * 20, 3210 - (p - 12) * 60, { boat: true });
   // Teleport to the Slayer Tower, three minutes upstairs.
   if (p < 20) return at(3428 + (p - 18) * 4, 3538);
   if (p < 23) return at(3436 + (p - 20) * 3, 3540, { plane: 1 });
@@ -169,15 +176,19 @@ function route(t) {
   if (p < 30) return at(3097 + (p - 25) * 10, 9868 + (p - 25) * 20);
   // Dies there, respawns in Lumbridge on another world.
   if (p < 32) return at(3222 + (p - 30) * 5, 3218 + (p - 30) * 8, { world: 330 });
-  // In Varrock a minute later: too far to be sure it was on foot.
-  if (p < ROUTE_LOGOUT_MINUTE) return at(3212 + (p - 32) * 6, 3424 + (p - 32) * 4, { world: 330 });
+  // Teleports into their house and walks from one room into the next. The
+  // rooms are reported where the game keeps them, which is not side by side.
+  if (p < 32.75) return at(1880 + (p - 32) * 8, 7052, { world: 330 });
+  if (p < 33.5) return at(1944 + (p - 32.75) * 8, 7068, { world: 330 });
+  // Teleports out, to Varrock.
+  if (p < ROUTE_LOGOUT_MINUTE) return at(3212 + (p - 33.5) * 12, 3424 + (p - 33.5) * 8, { world: 330 });
   // Logged out until the route starts over.
   return at(3230, 3436, { world: 330, online: false });
 }
 
 function position(account, t = Date.now()) {
   if (account.routed) return route(t);
-  // One lap every 7 minutes, so the once-a-minute trail points differ.
+  // One lap every 7 minutes: a new tile every few seconds.
   const angle = ((t - started) / 420_000) * Math.PI * 2 + account.phase;
   return {
     x: Math.round(account.place[1] + Math.cos(angle) * account.radius),
@@ -507,16 +518,56 @@ function periodStart(period) {
   return Date.now() - ({ week: 7, month: 30, year: 365 }[period] || 1) * 86400_000;
 }
 
-// One sample per minute, on the minute like the hub's, and none while logged out.
-function trail(account, from) {
-  const points = [];
-  const start = Math.ceil(Math.max(from, Date.now() - TRAIL_HOURS * 3600_000) / 60_000) * 60_000;
-  for (let t = start; t <= Date.now(); t += 60_000) {
-    const { x, y, plane, boat, world, online } = position(account, t);
-    if (account.routed && !online) continue;
-    points.push({ at: new Date(t).toISOString(), x, y, plane, world, is_on_boat: boat });
+// How the hub says a player got from one point of a trail to the next (D-103),
+// after classifyStep in its packages/core/src/trail.ts.
+function trailStep(prev, next) {
+  const elapsed = next.t - prev.t;
+  if (elapsed > 5 * 60_000) return "gap";
+  const speed = prev.boat && next.boat ? 4 : 2;
+  const reach = Math.max(1, Math.ceil(elapsed / TICK_MS)) * speed + 6;
+  const far = (shiftY) => Math.max(Math.abs(next.x - prev.x), Math.abs(next.y - prev.y - shiftY));
+  const inHouse = (p) => p.x >= 1852 && p.x <= 2115 && p.y >= 7036 && p.y <= 7116;
+  if (far(0) <= reach) return "move";
+  if (inHouse(prev) && inHouse(next)) return "house";
+  if (far(6400) <= reach || far(-6400) <= reach) return "entrance";
+  return "teleport";
+}
+
+// Where an account's trail has it at a time, or null while it is logged out.
+function trailTile(account, t) {
+  const { x, y, plane, boat, world, online } = position(account, t);
+  return account.routed && !online ? null : { t, x, y, plane, boat, world };
+}
+
+// An account's trail in [from, to], as the hub has it (D-102, D-103): a point
+// for every game tick on which the tile, floor or boat changed, one a minute
+// while standing still and none while logged out; each with how the player
+// got there. At most `limit` points, the newest, and `truncated` when older
+// ones in the range were left out. With MOCK_HUB_TRAIL=minute it is what a
+// hub from before that gave: a point a minute, all of them, and no `via`.
+function trail(account, from, to, limit) {
+  const every = MINUTE_TRAIL ? 60_000 : TICK_MS;
+  if (MINUTE_TRAIL) limit = Infinity;
+  const start = Math.max(from, Date.now() - TRAIL_HOURS * 3600_000);
+  // Newest first, and one more than asked for: the point before the trail.
+  const rows = [];
+  let t = Math.floor(Math.min(to, Date.now()) / every) * every;
+  let here = trailTile(account, t);
+  for (; t >= start && rows.length <= limit; t -= every) {
+    const before = trailTile(account, t - every);
+    const moved = !before || before.x !== here?.x || before.y !== here?.y || before.plane !== here?.plane || before.boat !== here?.boat;
+    if (here && (moved || t % 60_000 === 0)) rows.push(here);
+    here = before;
   }
-  return points;
+  const truncated = rows.length > limit;
+  const kept = rows.slice(0, limit).reverse();
+  const points = kept.map((row, i) => {
+    const point = { at: new Date(row.t).toISOString(), x: row.x, y: row.y, plane: row.plane, world: row.world, is_on_boat: row.boat };
+    if (MINUTE_TRAIL) return point;
+    const prev = i === 0 ? (truncated ? rows[limit] : null) : kept[i - 1];
+    return { ...point, via: prev ? trailStep(prev, row) : null };
+  });
+  return MINUTE_TRAIL ? { points } : { truncated, points };
 }
 
 function xpSeries(account, requestedSkills, from, step) {
@@ -666,11 +717,15 @@ const server = http.createServer((req, res) => {
     if (ids.length > 50) return invalid(res, "at most 50 accounts");
     const selected = ids.map(findAccount);
     if (selected.some((a) => !a || !shares(a, "location_history"))) return notFound(res);
-    const from = fromParam(url, 30);
+    const from = fromParam(url, 1);
+    const to = new Date(url.searchParams.get("to") || Date.now()).getTime();
+    if (Number.isNaN(from) || Number.isNaN(to)) return invalid(res, "from or to is not a time");
+    // One answer holds 100,000 points at most, shared between its accounts.
+    const limit = Math.min(MAX_LOCATION_POINTS, Math.floor(100_000 / selected.length));
     return ok(res, {
       from: new Date(from).toISOString(),
-      to: new Date().toISOString(),
-      accounts: selected.map((account) => ({ account: ref(account), points: trail(account, from) })),
+      to: new Date(to).toISOString(),
+      accounts: selected.map((account) => ({ account: ref(account), ...trail(account, from, to, limit) })),
     });
   }
 

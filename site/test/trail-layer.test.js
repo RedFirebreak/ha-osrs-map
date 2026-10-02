@@ -269,6 +269,24 @@ describe("TrailLayer", () => {
     expect(layer.nextLanding("Nobody", T - 600, T)).toBeNull();
   });
 
+  it("doesn't count the next room of a house as landing somewhere else", () => {
+    layer.setHistory(
+      "Bob",
+      {
+        step: 60,
+        points: [
+          [3000, 3000, 0, T - 600],
+          [1900, 7050, 0, T - 540, 0, 0, 4],
+          [1964, 7058, 0, T - 480, 0, 0, 3],
+          [3222, 3218, 0, T - 420, 0, 0, 4],
+        ],
+      },
+      COLORS,
+    );
+    expect(layer.modelOf("Bob").kinds).toEqual(["teleport", "house", "teleport"]);
+    expect(layer.nextLanding("Bob", T - 540, T)).toBe(T - 420);
+  });
+
   it("says where a player was at a time of the replay", () => {
     layer.setHistory("Alice", history(), COLORS);
     const [x, y] = tileCenter(3210, 3201);

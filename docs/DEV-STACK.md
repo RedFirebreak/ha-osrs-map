@@ -82,8 +82,12 @@ the real one.
 - **Accounts**: 12 (`MOCK_HUB_ACCOUNTS`), about 70 % online. Every fourth keeps its inventory,
   equipment and trail private.
 - **Positions**: each account circles one place (Lumbridge, Varrock, Zulrah, ...) every 7 minutes.
-  The position is a function of the clock, so a trail is computed when asked for, one point a minute,
-  back to `MOCK_HUB_TRAIL_HOURS` (default 6; 720 is 30 days, enough to need thinning).
+  The position is a function of the clock, so a trail is computed when asked for, back to
+  `MOCK_HUB_TRAIL_HOURS` (default 6; 720 is 30 days, enough to need pages and thinning). A trail is
+  what the hub gives: a point for every game tick on which the tile changed and one a minute while
+  standing still, each with `via` (how the player got there), 20,000 points to an answer and
+  `truncated` when there are more. `MOCK_HUB_TRAIL=minute` gives what a hub from before that did: a
+  point a minute and no `via`, so the map has to guess the teleports.
 - **Zezima**, the first account, follows a fixed 40-minute lap instead. The minute in the lap is
   `(Date.now() / 60000) % 40`:
 
@@ -95,8 +99,10 @@ the real one.
   | 18-23   | Teleport to the Slayer Tower, upstairs from 20; a 14.5M drop at 21   |
   | 23-30   | Teleport to Edgeville, into the dungeon at 25; a collection log slot |
   |         | at 27, dies at 29.5                                                  |
-  | 30-35   | Respawns in Lumbridge on another world, in Varrock from 32           |
-  | 35-40   | Logged out                                                           |
+  | 30-32   | Respawns in Lumbridge on another world                               |
+  | 32-33.5 | Teleport into the house; walks into the next room at 32.75           |
+  | 33.5-35 | Teleport to Varrock                                                  |
+  | 35-40   | Logged out: a gap in the trail                                       |
 
 - **Events**: one for a random online account every `MOCK_HUB_EVENT_MS` (default 4000): loot 45 %
   (one in twelve worth 10M or more), level-up 25 %, death 8 %, PK loot 5 %, collection log 5 %, diary
