@@ -81,7 +81,7 @@ export class MapPage extends BaseElement {
     this.renderEventControls();
     this.worldMap.setEventFilters(this.filters);
     this.scrubber.nextChange = (time) => this.worldMap.trailNextChange(time);
-    this.scrubber.nextHold = (from, to) => this.worldMap.trailNextHop(from, to);
+    this.scrubber.nextHop = (from, to) => this.worldMap.trailNextHop(from, to);
 
     this.eventListener(this.planeSelect, "change", this.handlePlaneSelect.bind(this));
     this.eventListener(this.planeSelect, "wheel", this.handlePlaneWheel.bind(this), { passive: false });
@@ -170,10 +170,10 @@ export class MapPage extends BaseElement {
 
   /** The replay shows a time on the trails, or was closed (null) and the map is live again. */
   handleReplayChange(event) {
-    const { time, follow } = event.detail;
+    const { time, follow, hop } = event.detail;
     this.replayButton.setAttribute("aria-pressed", String(time !== null));
     this.replayButton.classList.toggle("active", time !== null);
-    this.worldMap.setReplayTime(time, { follow: Boolean(follow) });
+    this.worldMap.setReplayTime(time, { follow: Boolean(follow), hop: hop || null });
   }
 
   /**

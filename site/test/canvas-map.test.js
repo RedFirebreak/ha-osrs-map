@@ -1701,25 +1701,66 @@ describe("CanvasMap trails", () => {
       expect([map.camera.x.target, map.camera.y.target]).toEqual(before);
     });
 
+    /** Bob teleports from (3200, 3200) to `to`, a minute later. */
+    const hop = (to = [2600, 3300]) => {
+      const end = Math.floor(Date.now() / 1000) - 300;
+      return {
+        step: 60,
+        points: [
+          [3200, 3200, 0, end - 60],
+          [...to, 0, end],
+        ],
+      };
+    };
+
     it("looks for hops on the trail of the player it follows", () => {
       const map = createMapInstance();
-      const hop = () => {
-        const end = Math.floor(Date.now() / 1000) - 300;
-        return {
-          step: 60,
-          points: [
-            [3200, 3200, 0, end - 60],
-            [2600, 3300, 0, end],
-          ],
-        };
-      };
       map.setTrail("Alice", serverTrail(), STYLE);
       map.setTrail("Bob", hop(), STYLE);
       const { tMin, tMax } = map.trailTimeline();
       // Alice's is the first trail and has no hops.
       expect(map.trailNextHop(tMin, tMax)).toBeNull();
       map.selectedName = "Bob";
-      expect(map.trailNextHop(tMin, tMax)).toBe(map.trailLayer.modelOf("Bob").points[1].t0);
+      const [left, landed] = map.trailLayer.modelOf("Bob").points;
+      expect(map.trailNextHop(tMin, tMax)).toEqual({ leave: left.t1, land: landed.t0, animated: true });
+    });
+
+    it("has only teleports played out, and none for someone who asked for less motion", () => {
+      const map = createMapInstance();
+      map.setTrail("Bob", hop([3200, 9600]), STYLE);
+      expect(map.trailLayer.modelOf("Bob").kinds).toEqual(["entrance"]);
+      const { tMin, tMax } = map.trailTimeline();
+      expect(map.trailNextHop(tMin, tMax)).toMatchObject({ animated: false });
+
+      map.setTrail("Bob", hop(), STYLE);
+      expect(map.trailNextHop(tMin, tMax)).toMatchObject({ animated: true });
+      vi.stubGlobal("matchMedia", (query) => ({ matches: query.includes("prefers-reduced-motion") }));
+      try {
+        expect(map.trailNextHop(tMin, tMax)).toMatchObject({ animated: false });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("goes along with a teleport that is played out", () => {
+      const map = createMapInstance();
+      map.setTrail("Bob", hop(), STYLE);
+      const { tMin, tMax } = map.trailTimeline();
+      const { leave, land } = map.trailNextHop(tMin, tMax);
+      const [fromX] = worldPixel(3200, 3201);
+      const [toX] = worldPixel(2600, 3301);
+
+      map.setReplayTime(leave, { follow: true, hop: { leave, land, progress: 0.1 } });
+      expect(map.camera.x.target).toBeCloseTo(fromX - 400, 3);
+      map.setReplayTime(leave, { follow: true, hop: { leave, land, progress: 0.5 } });
+      expect(map.camera.x.target).toBeLessThan(fromX - 400);
+      expect(map.camera.x.target).toBeGreaterThan(toX - 400);
+      map.setReplayTime(leave, { follow: true, hop: { leave, land, progress: 0.9 } });
+      expect(map.camera.x.target).toBeCloseTo(toX - 400, 3);
+
+      // Over: the time decides again.
+      map.setReplayTime(leave, { follow: true });
+      expect(map.camera.x.target).toBeCloseTo(fromX - 400, 3);
     });
 
     it("says when the map is moved by hand", () => {

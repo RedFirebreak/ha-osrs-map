@@ -1,5 +1,5 @@
 import { tileCenter } from "./map-space";
-import { placeAtTime, pointOnRun, vertexAtTime } from "./trail-geometry";
+import { hopPhases, placeAtTime, pointOnArc, pointOnRun, vertexAtTime } from "./trail-geometry";
 
 // Draws one trail on the map's canvas, in the map's own pixels (the camera
 // transform is already set), so every size is divided by the zoom to come out
@@ -8,11 +8,14 @@ import { placeAtTime, pointOnRun, vertexAtTime } from "./trail-geometry";
 // Live, a trail is a ribbon in the player's colour that fades and thins with
 // age, with a glow where it meets the marker. In replay it is the whole route
 // drawn faintly and, up to the time shown, an even bright line with a ghost of
-// the player at its end.
+// the player at its end. A teleport the replay plays out (`hop`: one of the
+// geometry's jumps and how far it has got, 0..1) is drawn by that instead of
+// by the time: the ghost vanishes, a spark runs along the arc, the ghost
+// appears.
 //
 // view:  {zoom, plane, minX, minY, maxX, maxY, nowS, nowMs, reducedMotion}
 // trail: {model, geometry, color, light, selected, online, hover}
-// mode:  {kind: "live", windowS} | {kind: "replay", time}
+// mode:  {kind: "live", windowS} | {kind: "replay", time, hop: {jump, progress} | null}
 
 const OUTLINE = "#0a0f1e";
 // The fade from new to old is stepped, so that long stretches share a stroke.
@@ -25,6 +28,11 @@ const CHEVRON_SPACING = 28;
 const CHEVRON_SPEED = 18;
 const MAX_CHEVRONS = 150;
 const BURST_RAYS = 8;
+const GHOST_RADIUS = 6.5;
+// Where a player vanishes or appears in a teleport that is played out: how
+// wide the rings around them start, and how high the streak of light rises.
+const HOP_RINGS = [26, 15];
+const HOP_STREAK = 38;
 
 /** How new a moment is: 1 for now, 0 for the start of the window. */
 export function ageFraction(t, nowS, windowS) {
@@ -216,6 +224,7 @@ function drawJump(ctx, view, trail, jump, alpha, progress, animate) {
         const pieces = jump.arc.length / 2 - 1;
         const upTo = Math.floor(progress * pieces);
         for (let s = 1; s <= upTo; s++) ctx.lineTo(jump.arc[s * 2], jump.arc[s * 2 + 1]);
+        if (progress * pieces > upTo) ctx.lineTo(...pointOnArc(jump.arc, progress));
         setDash(ctx, view, [6, 6]);
         if (animate) ctx.lineDashOffset = -((view.nowMs / 40) % 12) / view.zoom;
         moving = animate;
@@ -406,8 +415,14 @@ function drawReplay(ctx, view, trail, mode) {
     });
   }
 
+  // While a teleport is played out, what came after it has yet to happen. The
+  // time alone doesn't say so: the hub's times are whole seconds, and leaving,
+  // landing and the next step can share one.
+  const hopFrom = mode.hop ? mode.hop.jump.from : Infinity;
+
   // What has happened by now, brightly.
   for (const run of geometry.runs) {
+    if (run.i0 > hopFrom) continue;
     const end = vertexAtTime(run, time);
     if (!end) continue;
     if (run.count < 2 || !boxInView(view, run.bbox, pad)) continue;
@@ -425,24 +440,84 @@ function drawReplay(ctx, view, trail, mode) {
     }
   }
   for (const jump of geometry.jumps) {
-    if (time < jump.tA) continue;
+    if (time < jump.tA || jump.from >= hopFrom) continue;
     const progress = jump.tB > jump.tA ? Math.min(1, (time - jump.tA) / (jump.tB - jump.tA)) : 1;
     drawJump(ctx, view, trail, jump, 1, progress, false);
   }
 
-  const ghost = placeAtTime(geometry, time);
-  if (ghost && inView(view, ghost.x, ghost.y, pad)) {
-    const { x, y } = ghost;
-    ctx.setLineDash([]);
-    dot(ctx, x, y, 6.5 / view.zoom);
-    ctx.globalAlpha = floorAlpha(ghost.plane, view) < 1 ? 0.5 : 1;
-    ctx.fillStyle = trail.color;
-    ctx.fill();
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 2 / view.zoom;
-    ctx.stroke();
+  if (mode.hop) {
+    drawHop(ctx, view, trail, mode.hop);
+    return false;
   }
+  const ghost = placeAtTime(geometry, time);
+  if (ghost && inView(view, ghost.x, ghost.y, pad)) drawGhost(ctx, view, trail, ghost.x, ghost.y, ghost.plane);
   return false;
+}
+
+/** The player in a replay: a dot in their colour, `scale` (0..1) of its full size. */
+function drawGhost(ctx, view, trail, x, y, plane, scale = 1) {
+  if (scale <= 0) return;
+  ctx.setLineDash([]);
+  dot(ctx, x, y, (GHOST_RADIUS * scale) / view.zoom);
+  ctx.globalAlpha = floorAlpha(plane, view) < 1 ? 0.5 : 1;
+  ctx.fillStyle = trail.color;
+  ctx.fill();
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = (2 * scale) / view.zoom;
+  ctx.stroke();
+}
+
+/**
+ * The ghost vanishing in a teleport: `gone` is 0 while it stands there as
+ * ever and 1 when nothing is left. In between it shrinks inside rings that
+ * close in on it, while a streak of light leaves the ground. Played backwards
+ * (1 to 0) it is the ghost appearing.
+ */
+function drawVanishing(ctx, view, trail, x, y, plane, gone) {
+  if (!inView(view, x, y, (HOP_STREAK + 4) / view.zoom)) return;
+  // The light is at its brightest halfway and out at both ends.
+  const light = Math.sin(Math.PI * gone) * floorAlpha(plane, view);
+  ctx.setLineDash([]);
+  ctx.lineCap = "round";
+  if (light > 0) {
+    dot(ctx, x, y, 17 / view.zoom);
+    ctx.globalAlpha = 0.3 * light;
+    ctx.fillStyle = trail.light;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x, y - (HOP_STREAK * gone * gone) / view.zoom);
+    ctx.lineTo(x, y - (HOP_STREAK * gone) / view.zoom);
+    edged(ctx, view, trail.light, 3, light);
+    for (const reach of HOP_RINGS) {
+      dot(ctx, x, y, (GHOST_RADIUS + (reach - GHOST_RADIUS) * (1 - gone)) / view.zoom);
+      edged(ctx, view, trail.light, 2, light);
+    }
+  }
+  drawGhost(ctx, view, trail, x, y, plane, 1 - gone * gone);
+}
+
+/** A teleport as far as the replay has played it out; see hopPhases. */
+function drawHop(ctx, view, trail, { jump, progress }) {
+  const { depart, travel, arrive } = hopPhases(progress);
+  drawJump(ctx, view, trail, jump, 1, travel, false);
+  if (depart < 1) {
+    drawVanishing(ctx, view, trail, jump.ax, jump.ay, jump.planeA, depart);
+  } else if (travel >= 1) {
+    drawVanishing(ctx, view, trail, jump.bx, jump.by, jump.planeB, 1 - arrive);
+  } else if (jump.arc) {
+    // Under way: a spark at the head of the arc.
+    const [x, y] = pointOnArc(jump.arc, travel);
+    if (!inView(view, x, y, 12 / view.zoom)) return;
+    const alpha = Math.max(floorAlpha(jump.planeA, view), floorAlpha(jump.planeB, view));
+    ctx.setLineDash([]);
+    ctx.fillStyle = trail.light;
+    dot(ctx, x, y, 11 / view.zoom);
+    ctx.globalAlpha = 0.3 * alpha;
+    ctx.fill();
+    dot(ctx, x, y, 4 / view.zoom);
+    ctx.globalAlpha = alpha;
+    ctx.fill();
+  }
 }
 
 /** Draws a trail. Returns whether it is animating and wants another frame. */

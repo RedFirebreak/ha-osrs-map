@@ -373,8 +373,13 @@ export class CanvasMap extends BaseElement {
       onScreen: (x, y, pad) => this.isOnScreen(x, y, pad),
       nowS: api.serverNow() / 1000,
       nowMs: performance.now(),
-      reducedMotion: Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
+      reducedMotion: this.reducedMotion(),
     };
+  }
+
+  /** Whether the user asked their system for less motion. */
+  reducedMotion() {
+    return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
   }
 
   requestUpdate() {
@@ -674,11 +679,13 @@ export class CanvasMap extends BaseElement {
 
   /**
    * Shows the trails as they were at a time (unix seconds), or live again for
-   * null. With `follow` the camera goes along with the player's ghost.
+   * null. With `follow` the camera goes along with the player's ghost. `hop`
+   * is the watched player's teleport being played out meanwhile, as the
+   * replay's clock has it: `{leave, land, progress}`.
    */
-  setReplayTime(time, { follow = false } = {}) {
+  setReplayTime(time, { follow = false, hop = null } = {}) {
     const before = this.trailLayer.replayTime;
-    this.trailLayer.setReplay(time);
+    this.trailLayer.setReplay(time, hop && { ...hop, name: this.replayPlayer() });
     this.eventLayer.replayMoved(before, time);
     if (follow && time !== null) this.followReplay(time);
     this.requestUpdate();
@@ -691,11 +698,15 @@ export class CanvasMap extends BaseElement {
   }
 
   /**
-   * When, after `from` and up to `to`, the watched player lands after a hop
-   * (a teleport, an entrance, an unexplained jump), or null.
+   * Where the watched player next hops (a teleport, an entrance, an
+   * unexplained jump), landing after `from` and up to `to`: `{leave, land,
+   * animated}`, or null. A teleport is played out (`animated`), unless the
+   * user asked for less motion.
    */
   trailNextHop(from, to) {
-    return this.trailLayer.nextLanding(this.replayPlayer(), from, to);
+    const hop = this.trailLayer.nextHop(this.replayPlayer(), from, to);
+    if (!hop) return null;
+    return { leave: hop.leave, land: hop.land, animated: hop.kind === "teleport" && !this.reducedMotion() };
   }
 
   /** Centres the camera on the watched player's ghost. */

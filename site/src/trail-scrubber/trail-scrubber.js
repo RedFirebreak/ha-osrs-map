@@ -18,17 +18,19 @@ function tickWeight(tick) {
  * The replay controls of the map's trails: a timeline to drag, play and
  * pause, a speed, whether to skip the time in which nothing happened and
  * whether the map should follow the player.
- * Dispatches "replay-change" with `{time, follow}`: the time to show the
+ * Dispatches "replay-change" with `{time, follow, hop}`: the time to show the
  * trails at (unix seconds), or null when the replay is closed and the map is
  * live again; `follow` when the map should keep the player in view, which it
  * is asked to whenever a time is looked up or played, not when the replay
- * opens or the trails grow.
+ * opens or the trails grow; `hop` while a teleport is played out, as
+ * `{leave, land, progress}` (see ReplayClock), and null otherwise.
  *
  * `setTimeline({tMin, tMax, ticks})` gives it the span of the trails and the
  * moments to mark (`{t, kind, tier, color}`: a teleport, or an event of a kind
  * the map shows, notable when it has a tier); `nextChange(time)`, when set, says when something next
- * happens on the trails, and `nextHold(from, to)` when the player lands after
- * a hop in that span, where the replay then holds for a moment.
+ * happens on the trails, and `nextHop(from, to)` where the player hops next in
+ * that span, as `{leave, land, animated}`: the replay stops for it, to play a
+ * teleport out or to hold for a moment where the player landed.
  */
 export class TrailScrubber extends BaseElement {
   constructor() {
@@ -36,7 +38,7 @@ export class TrailScrubber extends BaseElement {
     this.clock = new ReplayClock();
     this.timeline = { tMin: null, tMax: null, ticks: [] };
     this.nextChange = null;
-    this.nextHold = null;
+    this.nextHop = null;
     this.follow = wantsFollow();
   }
 
@@ -94,7 +96,9 @@ export class TrailScrubber extends BaseElement {
     this.stopFrames();
     this.hidden = true;
     this.show();
-    if (wasOpen) this.dispatchEvent(new CustomEvent("replay-change", { detail: { time: null, follow: false } }));
+    if (wasOpen) {
+      this.dispatchEvent(new CustomEvent("replay-change", { detail: { time: null, follow: false, hop: null } }));
+    }
   }
 
   setTimeline(timeline) {
@@ -124,8 +128,11 @@ export class TrailScrubber extends BaseElement {
 
   togglePlaying() {
     if (this.clock.playing) {
+      const hopping = Boolean(this.clock.hop);
       this.clock.pause();
       this.stopFrames();
+      // The map was in the middle of a teleport, which is back at its start.
+      if (hopping) this.emit();
     } else {
       this.clock.play();
       this.lastFrame = performance.now();
@@ -137,7 +144,7 @@ export class TrailScrubber extends BaseElement {
 
   frame(now) {
     this.frameRequest = null;
-    if (this.clock.tick(now - this.lastFrame, this.nextChange, this.nextHold)) this.emit();
+    if (this.clock.tick(now - this.lastFrame, this.nextChange, this.nextHop)) this.emit();
     this.lastFrame = now;
     this.show();
     if (this.clock.playing) this.frameRequest = window.requestAnimationFrame(this.frame);
@@ -168,7 +175,8 @@ export class TrailScrubber extends BaseElement {
   }
 
   emit(follow = this.follow) {
-    this.dispatchEvent(new CustomEvent("replay-change", { detail: { time: this.clock.time, follow } }));
+    const { time, hop } = this.clock;
+    this.dispatchEvent(new CustomEvent("replay-change", { detail: { time, follow, hop } }));
   }
 
   /** Brings the controls in line with the clock. */

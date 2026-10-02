@@ -7,7 +7,7 @@ import {
   placeMarks,
   timelineTicks,
 } from "./trail-model";
-import { buildGeometry, hitTest, lodForZoom, placeAtTime } from "./trail-geometry";
+import { buildGeometry, hitTest, hopFocus, lodForZoom, placeAtTime } from "./trail-geometry";
 import { drawTrail } from "./trail-renderer";
 
 const DAY_S = 86400;
@@ -28,6 +28,7 @@ export class TrailLayer {
     this.eventFilter = null;
     this.eventFilterVersion = 0;
     this.replayTime = null;
+    this.hop = null;
     this.hover = null;
   }
 
@@ -155,9 +156,27 @@ export class TrailLayer {
     return trail.geometries[lod];
   }
 
-  /** Shows the trails as they were at a time (unix seconds); null goes back to live. */
-  setReplay(time) {
+  /**
+   * Shows the trails as they were at a time (unix seconds); null goes back to
+   * live. `hop` is the teleport being played out meanwhile, if one is:
+   * `{name, leave, land, progress}`, whose it is, when they left and landed,
+   * and how far it has got (0..1).
+   */
+  setReplay(time, hop = null) {
     this.replayTime = time;
+    this.hop = time === null ? null : hop;
+  }
+
+  /**
+   * The teleport being played out on a player's trail, as their geometry has
+   * it: `{jump, progress}`, or null when none is (or the trail has changed and
+   * no longer has it).
+   */
+  hopOn(name, geometry) {
+    const { hop } = this;
+    if (!hop || hop.name !== name) return null;
+    const jump = geometry.jumps.find((candidate) => candidate.tA === hop.leave && candidate.tB === hop.land);
+    return jump ? { jump, progress: hop.progress } : null;
   }
 
   /**
@@ -184,27 +203,32 @@ export class TrailLayer {
 
   /**
    * Where a player's ghost is drawn at a time of the replay, in map pixels:
-   * `{x, y, plane}`; null when they have no trail or it starts later.
+   * `{x, y, plane}`; null when they have no trail or it starts later. While
+   * their teleport is played out, that is where it has got to.
    */
   ghostAt(name, time, zoom) {
     const trail = this.trails.get(name);
-    return trail ? placeAtTime(this.geometryOf(trail, lodForZoom(zoom)), time) : null;
+    if (!trail) return null;
+    const geometry = this.geometryOf(trail, lodForZoom(zoom));
+    const hop = this.hopOn(name, geometry);
+    return hop ? hopFocus(hop.jump, hop.progress) : placeAtTime(geometry, time);
   }
 
   /**
-   * When, after `from` and up to `to`, a player next turns up somewhere else:
-   * after a teleport, through an entrance, or across a jump that can't be
-   * explained. The next room of their house isn't somewhere else. Null when
+   * Where a player next turns up somewhere else, landing after `from` and up
+   * to `to`: `{leave, land, kind}`, when they left, when they landed, and
+   * whether it was a teleport, an entrance or a jump that can't be explained
+   * ("unknown"). The next room of their house isn't somewhere else. Null when
    * they don't in that span, or have no trail.
    */
-  nextLanding(name, from, to) {
+  nextHop(name, from, to) {
     const model = this.modelOf(name);
     if (!model) return null;
     for (const jump of model.jumps) {
       if (jump.kind === "house") continue;
-      const landed = model.points[jump.from + 1].t0;
-      if (landed > to) return null;
-      if (landed > from) return landed;
+      const land = model.points[jump.from + 1].t0;
+      if (land > to) return null;
+      if (land > from) return { leave: model.points[jump.from].t1, land, kind: jump.kind };
     }
     return null;
   }
@@ -245,14 +269,17 @@ export class TrailLayer {
     let animating = false;
     for (const name of names) {
       const trail = this.trails.get(name);
+      const geometry = this.geometryOf(trail, lod);
       const mode =
-        this.replayTime === null ? { kind: "live", windowS: trail.windowS } : { kind: "replay", time: this.replayTime };
+        this.replayTime === null
+          ? { kind: "live", windowS: trail.windowS }
+          : { kind: "replay", time: this.replayTime, hop: this.hopOn(name, geometry) };
       const drawn = drawTrail(
         ctx,
         view,
         {
           model: trail.model,
-          geometry: this.geometryOf(trail, lod),
+          geometry,
           color: trail.color,
           light: trail.light,
           selected: name === selectedName,

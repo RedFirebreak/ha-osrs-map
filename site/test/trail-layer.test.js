@@ -244,32 +244,32 @@ describe("TrailLayer", () => {
     expect(layer.hitTest(x, y + 40, 8, 2)).toBeNull();
   });
 
-  it("says when a player next lands after a hop", () => {
-    layer.setHistory("Alice", history(), COLORS);
-    layer.setHistory(
-      "Bob",
-      {
-        step: 60,
-        points: [
-          [3000, 3000, 0, T - 600],
-          [2400, 3000, 0, T - 540],
-          [2410, 3000, 0, T - 480],
-          [2410, 9400, 0, T - 420],
-        ],
-      },
-      COLORS,
-    );
-    expect(layer.modelOf("Bob").kinds).toEqual(["teleport", "walk", "entrance"]);
-    expect(layer.nextLanding("Bob", T - 600, T - 500)).toBe(T - 540);
-    expect(layer.nextLanding("Bob", T - 600, T)).toBe(T - 540);
-    // From just after one landing, the next.
-    expect(layer.nextLanding("Bob", T - 540, T)).toBe(T - 420);
-    expect(layer.nextLanding("Bob", T - 600, T - 541)).toBeNull();
-    expect(layer.nextLanding("Alice", T - 600, T + 600)).toBeNull();
-    expect(layer.nextLanding("Nobody", T - 600, T)).toBeNull();
+  /** Bob teleports west, walks a little, and goes down into a dungeon. */
+  const hopper = () => ({
+    step: 60,
+    points: [
+      [3000, 3000, 0, T - 600],
+      [2400, 3000, 0, T - 540],
+      [2410, 3000, 0, T - 480],
+      [2410, 9400, 0, T - 420],
+    ],
   });
 
-  it("doesn't count the next room of a house as landing somewhere else", () => {
+  it("says where a player next hops: when they leave, when they land and how", () => {
+    layer.setHistory("Alice", history(), COLORS);
+    layer.setHistory("Bob", hopper(), COLORS);
+    expect(layer.modelOf("Bob").kinds).toEqual(["teleport", "walk", "entrance"]);
+    const teleport = { leave: T - 600, land: T - 540, kind: "teleport" };
+    expect(layer.nextHop("Bob", T - 600, T - 500)).toEqual(teleport);
+    expect(layer.nextHop("Bob", T - 600, T)).toEqual(teleport);
+    // From just after one landing, the next.
+    expect(layer.nextHop("Bob", T - 540, T)).toEqual({ leave: T - 480, land: T - 420, kind: "entrance" });
+    expect(layer.nextHop("Bob", T - 600, T - 541)).toBeNull();
+    expect(layer.nextHop("Alice", T - 600, T + 600)).toBeNull();
+    expect(layer.nextHop("Nobody", T - 600, T)).toBeNull();
+  });
+
+  it("doesn't count the next room of a house as a hop", () => {
     layer.setHistory(
       "Bob",
       {
@@ -284,7 +284,48 @@ describe("TrailLayer", () => {
       COLORS,
     );
     expect(layer.modelOf("Bob").kinds).toEqual(["teleport", "house", "teleport"]);
-    expect(layer.nextLanding("Bob", T - 540, T)).toBe(T - 420);
+    expect(layer.nextHop("Bob", T - 540, T)).toMatchObject({ land: T - 420, kind: "teleport" });
+  });
+
+  describe("while a teleport is played out", () => {
+    const hop = (progress, name = "Bob") => ({ name, leave: T - 600, land: T - 540, progress });
+
+    beforeEach(() => {
+      layer.setHistory("Alice", history(), COLORS);
+      layer.setHistory("Bob", hopper(), COLORS);
+    });
+
+    it("has the player's ghost where the teleport has got to, not where the time says", () => {
+      const [ax, ay] = tileCenter(3000, 3001);
+      const [bx, by] = tileCenter(2400, 3001);
+      layer.setReplay(T - 600, hop(0.1));
+      expect(layer.ghostAt("Bob", T - 600, 2)).toEqual({ x: ax, y: ay, plane: 0 });
+      layer.setReplay(T - 600, hop(0.5));
+      const middle = layer.ghostAt("Bob", T - 600, 2);
+      expect(middle.x).toBeLessThan(ax);
+      expect(middle.x).toBeGreaterThan(bx);
+      layer.setReplay(T - 600, hop(0.9));
+      expect(layer.ghostAt("Bob", T - 600, 2)).toEqual({ x: bx, y: by, plane: 0 });
+    });
+
+    it("leaves the other players where the time has them", () => {
+      layer.setReplay(T + 60, hop(0.5));
+      const [x, y] = tileCenter(3210, 3201);
+      expect(layer.ghostAt("Alice", T + 60, 2)).toEqual({ x, y, plane: 0 });
+    });
+
+    it("is over once the replay moves on without one", () => {
+      const [ax, ay] = tileCenter(3000, 3001);
+      layer.setReplay(T - 600, hop(0.5));
+      layer.setReplay(T - 600);
+      expect(layer.ghostAt("Bob", T - 600, 2)).toEqual({ x: ax, y: ay, plane: 0 });
+    });
+
+    it("goes by the time when the trail has no such teleport any more", () => {
+      const [ax, ay] = tileCenter(3000, 3001);
+      layer.setReplay(T - 600, { ...hop(0.5), land: T - 500 });
+      expect(layer.ghostAt("Bob", T - 600, 2)).toEqual({ x: ax, y: ay, plane: 0 });
+    });
   });
 
   it("says where a player was at a time of the replay", () => {

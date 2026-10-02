@@ -95,9 +95,103 @@ describe("ReplayClock", () => {
     expect(clock.time).toBe(T + 60);
   });
 
-  describe("after a hop", () => {
+  describe("at a teleport", () => {
+    // The player leaves at T + 18 and turns up somewhere else at T + 20.
+    const teleport = (from, to) =>
+      from < T + 20 && to >= T + 20 ? { leave: T + 18, land: T + 20, animated: true } : null;
+
+    beforeEach(() => {
+      clock.seek(T);
+      clock.speed = 300;
+      clock.play();
+    });
+
+    it("stops where the player left, plays the teleport out, and goes on from where they landed", () => {
+      const asked = vi.fn(teleport);
+      expect(clock.tick(100, null, asked)).toBe(true);
+      expect(asked).toHaveBeenCalledWith(T, T + 30);
+      expect(clock.time).toBe(T + 18);
+      expect(clock.hop).toEqual({ leave: T + 18, land: T + 20, progress: 0 });
+      expect(clock.playing).toBe(true);
+
+      // It takes 1.3 seconds, whatever the speed of the replay.
+      const seen = [];
+      for (let i = 0; i < 5; i++) {
+        expect(clock.tick(250, null, teleport)).toBe(true);
+        expect(clock.time).toBe(T + 18);
+        seen.push(clock.hop.progress);
+      }
+      expect(seen[0]).toBeCloseTo(250 / 1300, 5);
+      expect(seen[4]).toBeCloseTo(1250 / 1300, 5);
+
+      expect(clock.tick(100, null, teleport)).toBe(true);
+      expect(clock.hop).toBeNull();
+      expect(clock.time).toBe(T + 20);
+      clock.tick(100, null, teleport);
+      expect(clock.time).toBe(T + 50);
+    });
+
+    it("drops the teleport when a time is looked up by hand", () => {
+      clock.tick(100, null, teleport);
+      clock.tick(250, null, teleport);
+      clock.seek(T + 100);
+      expect(clock.hop).toBeNull();
+      clock.tick(100, null, teleport);
+      expect(clock.time).toBe(T + 130);
+    });
+
+    it("goes back to the start of the teleport on a pause, and plays it from there", () => {
+      // The hub's times are whole seconds: the player may leave and land in the same one.
+      const instant = (from, to) =>
+        from < T + 20 && to >= T + 20 ? { leave: T + 20, land: T + 20, animated: true } : null;
+      clock.tick(100, null, instant);
+      clock.tick(250, null, instant);
+      clock.pause();
+      expect(clock.time).toBe(T + 20);
+      expect(clock.hop).toEqual({ leave: T + 20, land: T + 20, progress: 0 });
+      expect(clock.tick(250, null, instant)).toBe(false);
+      expect(clock.hop.progress).toBe(0);
+
+      clock.play();
+      expect(clock.tick(250, null, instant)).toBe(true);
+      expect(clock.hop.progress).toBeCloseTo(250 / 1300, 5);
+      for (let i = 0; i < 5; i++) clock.tick(250, null, instant);
+      expect(clock.hop).toBeNull();
+      clock.tick(100, null, instant);
+      expect(clock.time).toBe(T + 50);
+    });
+
+    it("finishes a teleport at the end of the trails that was paused, instead of starting over", () => {
+      const last = () => ({ leave: T + 3600, land: T + 3600, animated: true });
+      clock.seek(T + 3580);
+      clock.tick(100, null, last);
+      clock.tick(250, null, last);
+      clock.pause();
+      clock.play();
+      expect(clock.time).toBe(T + 3600);
+      expect(clock.hop).not.toBeNull();
+      for (let i = 0; i < 6; i++) clock.tick(250, null, last);
+      expect(clock.hop).toBeNull();
+      expect(clock.playing).toBe(false);
+    });
+
+    it("stops playing when the player lands at the end of the trails", () => {
+      const last = () => ({ leave: T + 3590, land: T + 3600, animated: true });
+      clock.seek(T + 3580);
+      clock.tick(100, null, last);
+      expect(clock.time).toBe(T + 3590);
+      expect(clock.playing).toBe(true);
+      for (let i = 0; i < 6; i++) clock.tick(250, null, last);
+      expect(clock.time).toBe(T + 3600);
+      expect(clock.hop).toBeNull();
+      expect(clock.playing).toBe(false);
+    });
+  });
+
+  describe("after a hop that isn't played out", () => {
     // The player lands somewhere else at T + 20.
-    const landing = (from, to) => (from < T + 20 && to >= T + 20 ? T + 20 : null);
+    const landing = (from, to) =>
+      from < T + 20 && to >= T + 20 ? { leave: T + 18, land: T + 20, animated: false } : null;
 
     beforeEach(() => {
       clock.seek(T);
@@ -137,19 +231,13 @@ describe("ReplayClock", () => {
 
     it("also stops at a landing it would have skipped to", () => {
       // Nothing happens until the player turns up elsewhere at T + 2000.
-      clock.tick(
-        100,
-        () => T + 2000,
-        (from, to) => (from < T + 2000 && to >= T + 2000 ? T + 2000 : null),
-      );
+      const far = (from, to) =>
+        from < T + 2000 && to >= T + 2000 ? { leave: T + 1999, land: T + 2000, animated: false } : null;
+      clock.tick(100, () => T + 2000, far);
       expect(clock.time).toBe(T + 1970);
-      for (let i = 0; i < 3; i++)
-        clock.tick(
-          40,
-          () => T + 2000,
-          (from, to) => (from < T + 2000 && to >= T + 2000 ? T + 2000 : null),
-        );
+      for (let i = 0; i < 3; i++) clock.tick(40, () => T + 2000, far);
       expect(clock.time).toBe(T + 2000);
+      expect(clock.hop).toBeNull();
     });
   });
 
@@ -376,19 +464,67 @@ describe("trail scrubber", () => {
     expect(changes[changes.length - 1]).toBeNull();
   });
 
-  it("holds the replay for a moment where the player lands after a hop", () => {
-    vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
-    scrubber.nextHold = vi.fn((from, to) => (from < T + 300 && to >= T + 300 ? T + 300 : null));
-    scrubber.open();
-    scrubber.querySelector(".trail-scrubber__skip input").click();
-    playButton().click();
-    // At five minutes a second the landing is reached within a second or so.
-    vi.advanceTimersByTime(1500);
-    expect(changes[changes.length - 1]).toBe(T + 300);
-    vi.advanceTimersByTime(800);
-    expect(changes[changes.length - 1]).toBe(T + 300);
-    vi.advanceTimersByTime(2000);
-    expect(changes[changes.length - 1]).toBeGreaterThan(T + 300);
+  describe("at a hop", () => {
+    const hopAt300 = (animated) => (from, to) =>
+      from < T + 300 && to >= T + 300 ? { leave: T + 298, land: T + 300, animated } : null;
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+    });
+
+    it("holds the replay for a moment where the player lands", () => {
+      scrubber.nextHop = vi.fn(hopAt300(false));
+      scrubber.open();
+      scrubber.querySelector(".trail-scrubber__skip input").click();
+      playButton().click();
+      // At five minutes a second the landing is reached within a second or so.
+      vi.advanceTimersByTime(1500);
+      expect(changes[changes.length - 1]).toBe(T + 300);
+      vi.advanceTimersByTime(800);
+      expect(changes[changes.length - 1]).toBe(T + 300);
+      vi.advanceTimersByTime(2000);
+      expect(changes[changes.length - 1]).toBeGreaterThan(T + 300);
+    });
+
+    it("tells the map how far a teleport has got, frame by frame, until the player has landed", () => {
+      const hops = [];
+      scrubber.addEventListener("replay-change", (event) => hops.push(event.detail.hop));
+      scrubber.nextHop = vi.fn(hopAt300(true));
+      scrubber.open();
+      scrubber.querySelector(".trail-scrubber__skip input").click();
+      playButton().click();
+      vi.advanceTimersByTime(1500);
+      // Stopped where the player left, with the teleport under way.
+      expect(changes[changes.length - 1]).toBe(T + 298);
+      const under = hops.filter(Boolean);
+      expect(under.length).toBeGreaterThan(5);
+      expect(under[0]).toEqual({ leave: T + 298, land: T + 300, progress: 0 });
+      const progress = under.map((hop) => hop.progress);
+      expect(progress).toEqual(progress.slice().sort((a, b) => a - b));
+      expect(progress[progress.length - 1]).toBeGreaterThan(progress[0]);
+
+      vi.advanceTimersByTime(1500);
+      expect(hops[hops.length - 1]).toBeNull();
+      expect(changes[changes.length - 1]).toBeGreaterThanOrEqual(T + 300);
+    });
+
+    it("shows the map the start of a teleport when the replay is paused in the middle of it", () => {
+      const hops = [];
+      scrubber.addEventListener("replay-change", (event) => hops.push(event.detail.hop));
+      scrubber.nextHop = vi.fn(hopAt300(true));
+      scrubber.open();
+      scrubber.querySelector(".trail-scrubber__skip input").click();
+      playButton().click();
+      vi.advanceTimersByTime(1500);
+      expect(hops[hops.length - 1].progress).toBeGreaterThan(0);
+      playButton().click();
+      expect(hops[hops.length - 1]).toEqual({ leave: T + 298, land: T + 300, progress: 0 });
+      expect(changes[changes.length - 1]).toBe(T + 298);
+
+      // Looking up a time, or closing the replay, drops it.
+      scrubber.seek(T + 600);
+      expect(hops[hops.length - 1]).toBeNull();
+    });
   });
 
   it("asks what happens next so that it can skip the waiting", () => {
