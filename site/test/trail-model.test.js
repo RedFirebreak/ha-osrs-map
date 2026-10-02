@@ -43,6 +43,25 @@ describe("decodeTrail", () => {
     ]);
   });
 
+  it("reads how the hub says each point was reached, where it said", () => {
+    const row = (seconds, via) => [3200 + seconds, 3200, 0, T + seconds, 0, 0, via];
+    const trail = decodeTrail({
+      step: 60,
+      points: [[3200, 3200, 0, T], row(1, 1), row(2, 2), row(3, 3), row(4, 4), row(5, 5), row(6, 0), row(7, 9)],
+    });
+    expect(trail.points.map((point) => point.via)).toEqual([
+      undefined,
+      "move",
+      "entrance",
+      "house",
+      "teleport",
+      "gap",
+      undefined,
+      undefined,
+    ]);
+    expect("via" in trail.points[0]).toBe(false);
+  });
+
   it("reads a bare list of points from an older server and skips broken ones", () => {
     const trail = decodeTrail([
       [3200, 3200, 0, T],
@@ -110,7 +129,70 @@ describe("classifyStep", () => {
   });
 });
 
+describe("classifyStep with the hub's labels", () => {
+  const via = (label, extra = {}) => ({ via: label, ...extra });
+
+  it("takes a move for one, however far, and tells walking, stairs and sailing apart", () => {
+    // Lumbridge to Ardougne: thinned, or a minute's sample of an older plugin.
+    expect(classifyStep(at(3222, 3218, 0), at(2662, 3305, 1, via("move")))).toBe("walk");
+    // Across what would be a gap, too: the points in between were thinned away.
+    expect(classifyStep(at(3200, 3200, 0), at(3210, 3200, 30, via("move")))).toBe("walk");
+    expect(classifyStep(at(3432, 3538, 0), at(3433, 3538, 1, via("move", { plane: 1 })))).toBe("stairs");
+    const boat = { boat: true };
+    expect(classifyStep(at(3040, 3200, 0, boat), at(3040, 2800, 1, via("move", boat)))).toBe("sail");
+    expect(classifyStep(at(3040, 3210, 0), at(3040, 3200, 1, via("move", boat)))).toBe("walk");
+  });
+
+  it("takes a teleport, an entrance and a gap for what the hub says they are", () => {
+    // Three tiles: nothing but the label tells these from a walk.
+    expect(classifyStep(at(3200, 3200, 0), at(3203, 3200, 1, via("teleport")))).toBe("teleport");
+    expect(classifyStep(at(3200, 3200, 0), at(3203, 3200, 1, via("gap")))).toBe("unknown");
+    // An entrance further from the spot above it than the guess allows.
+    expect(classifyStep(at(3097, 3468, 0), at(3500, 9868, 1, via("entrance")))).toBe("entrance");
+    // Into the house from the surface is a teleport, not an entrance or a walk.
+    expect(classifyStep(at(3222, 3218, 0), at(1900, 7050, 1, via("teleport")))).toBe("teleport");
+  });
+
+  it("knows the next room of a house, which isn't a teleport", () => {
+    const step = classifyStep(at(1900, 7050, 0), at(1964, 7058, 1, via("house")));
+    expect(step).toBe("house");
+    // The same two points without a label can only be guessed at.
+    expect(classifyStep(at(1900, 7050, 0), at(1964, 7058, 1))).toBe("walk");
+  });
+
+  it("goes by the label of the point reached, not of the one left", () => {
+    expect(classifyStep(at(3200, 3200, 0, via("teleport")), at(3201, 3200, 1, via("move")))).toBe("walk");
+    // A point seen live after the hub's last one has no label: the guess stands.
+    expect(classifyStep(at(3222, 3218, 0, via("move")), at(2662, 3305, 1))).toBe("teleport");
+    expect(classifyStep(at(3222, 3218, 0, via("teleport")), at(3225, 3218, 1))).toBe("walk");
+  });
+});
+
 describe("buildTrailModel", () => {
+  it("draws no line into the next room of a house, and none out of the house", () => {
+    const points = [
+      at(3200, 3200, 0),
+      at(1900, 7050, 1, { via: "teleport" }),
+      at(1903, 7050, 2, { via: "move" }),
+      at(1964, 7058, 3, { via: "house" }),
+      at(1966, 7058, 4, { via: "move" }),
+      at(3222, 3218, 5, { via: "teleport" }),
+    ];
+    const model = buildTrailModel(points);
+    expect(model.kinds).toEqual(["teleport", "walk", "house", "walk", "teleport"]);
+    expect(model.runs).toEqual([
+      { i0: 0, i1: 0, sail: false },
+      { i0: 1, i1: 2, sail: false },
+      { i0: 3, i1: 4, sail: false },
+      { i0: 5, i1: 5, sail: false },
+    ]);
+    expect(model.jumps.map((jump) => jump.kind)).toEqual(["teleport", "house", "teleport"]);
+    // The player waits at the door until they are in the next room.
+    expect(positionAt(model, T + 150)).toMatchObject({ index: 2, kind: "house", x: 1903, moving: true });
+    // Only the teleports are worth a tick on the timeline.
+    expect(timelineTicks(model).map((tick) => tick.t)).toEqual([T + 60, T + 300]);
+  });
+
   it("chains walked points into runs and lists the jumps between them", () => {
     const points = [at(3200, 3200, 0), at(3210, 3200, 1), at(3220, 3200, 2), at(2662, 3305, 3), at(2670, 3305, 4)];
     const model = buildTrailModel(points);
@@ -176,6 +258,14 @@ describe("mergeTrail", () => {
     const merged = mergeTrail(history, [live(3205, 3200, 30), live(3212, 3200, 100), live(3220, 3200, 130)], null);
     expect(merged.map((point) => point.x)).toEqual([3200, 3210, 3220]);
     expect(merged[2].live).toBe(true);
+  });
+
+  it("adds what was seen right after the last point of a hub that dates them to the tick", () => {
+    const labelled = [history[0], { ...history[1], via: "move" }];
+    const merged = mergeTrail(labelled, [live(3205, 3200, 30), live(3212, 3200, 65), live(3220, 3200, 130)], null);
+    expect(merged.map((point) => point.x)).toEqual([3200, 3210, 3212, 3220]);
+    // What the hub didn't label is left for the guess.
+    expect(merged.map((point) => point.via)).toEqual([undefined, "move", undefined, undefined]);
   });
 
   it("always ends on the marker while the player is online", () => {

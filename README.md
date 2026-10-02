@@ -226,7 +226,7 @@ npm start
 To try the map without a hub, run the mock and point the backend at it. `MOCK_HUB_ACCOUNTS` sets how
 many players it serves (default 12); every fourth keeps its inventory, equipment and trail private. The
 first player walks a fixed 40-minute route with everything a trail can show (teleports, a boat trip,
-stairs, a dungeon, a death, a logout) and the same events every lap (a level, a 14.5M drop, a collection
+stairs, a dungeon, a death, two rooms of a house, a logout) and the same events every lap (a level, a 14.5M drop, a collection
 log slot); `MOCK_HUB_TRAIL_HOURS` sets how far back trails go (default 6). Every `MOCK_HUB_EVENT_MS`
 (default 4000) a random online player gets an event of a random type. The mock also stands in for
 Discord: with `DISCORD_API_BASE` pointed at it, "Log in with Discord" asks whether to come in as an

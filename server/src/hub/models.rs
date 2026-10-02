@@ -203,6 +203,25 @@ pub(crate) struct HubXpLine {
     pub points: Vec<(DateTime<Utc>, i64)>,
 }
 
+/// How a player got to a point of their trail from the one before it in the
+/// hub's answer (hub D-103). Only `Move` was walked, run or sailed.
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum HubVia {
+    Move,
+    /// Into or out of the underground, at this spot.
+    Entrance,
+    /// From one room of a player-owned house to the next: walked, but the
+    /// coordinates jump.
+    House,
+    Teleport,
+    /// More than five minutes since the point before.
+    Gap,
+    /// A label from a newer hub than this server knows.
+    #[serde(other)]
+    Other,
+}
+
 #[derive(Deserialize, Debug)]
 pub(crate) struct HubLocationPoint {
     pub at: DateTime<Utc>,
@@ -213,6 +232,10 @@ pub(crate) struct HubLocationPoint {
     pub world: Option<i32>,
     #[serde(default)]
     pub is_on_boat: Option<bool>,
+    /// Null on the first point of an answer whose trail starts there, and
+    /// left out by a hub from before D-103.
+    #[serde(default)]
+    pub via: Option<HubVia>,
 }
 
 /// `GET /leaderboards/gains`.
@@ -355,6 +378,9 @@ pub(crate) struct HubLocationsMulti {
 
 #[derive(Deserialize, Debug)]
 pub(crate) struct HubAccountLocations {
-    pub account: HubAccountRef,
+    /// Older points in the range were left out (hub D-102): the answer holds
+    /// the newest 20,000 at most.
+    #[serde(default)]
+    pub truncated: bool,
     pub points: Vec<HubLocationPoint>,
 }

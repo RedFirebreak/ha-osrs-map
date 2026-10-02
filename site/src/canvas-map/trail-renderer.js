@@ -141,6 +141,32 @@ function ring(ctx, view, x, y, color, alpha) {
   ctx.stroke();
 }
 
+/**
+ * A small house above a point, clear of the line that starts there: the
+ * player walked into this room of their house from the one before.
+ */
+function house(ctx, view, x, tileY, color, alpha) {
+  const size = 4 / view.zoom;
+  const y = tileY - 12 / view.zoom;
+  ctx.setLineDash([]);
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(x - size, y + size);
+  ctx.lineTo(x - size, y - size * 0.25);
+  ctx.lineTo(x, y - size * 1.25);
+  ctx.lineTo(x + size, y - size * 0.25);
+  ctx.lineTo(x + size, y + size);
+  ctx.closePath();
+  ctx.globalAlpha = alpha * 0.7;
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 3.5 / view.zoom;
+  ctx.stroke();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5 / view.zoom;
+  ctx.stroke();
+}
+
 /** A short dashed line straight up: the other end is on another part of the map. */
 function stub(ctx, view, x, y, color, alpha) {
   setDash(ctx, view, [4, 4]);
@@ -203,6 +229,11 @@ function drawJump(ctx, view, trail, jump, alpha, progress, animate) {
     }
   }
   if (kind === "unknown") return moving;
+  if (kind === "house") {
+    // Walked, so nothing where they left and no link: only the room they came into.
+    if (arrived && inView(view, bx, by, pad)) house(ctx, view, bx, by, trail.light, alphaB);
+    return moving;
+  }
 
   for (const [x, y, endAlpha, shown] of [
     [ax, ay, alphaA, true],

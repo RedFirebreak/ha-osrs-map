@@ -144,6 +144,27 @@ describe("drawTrail, live", () => {
     expect(dotted[0].path).toEqual([tileCenter(3200, 3200), tileCenter(3200, 3400)]);
   });
 
+  it("marks the room of a house the player walked into, without a line or an arc to it", () => {
+    const ctx = recordingContext();
+    const points = [at(1900, 7050, 2), at(1903, 7050, 1, { via: "move" }), at(1911, 7058, 0, { via: "house" })];
+    const trail = trailOf(points);
+    expect(trail.model.kinds).toEqual(["walk", "house"]);
+    drawTrail(ctx, viewOf(1905, 7054), trail, LIVE);
+    const [fromX, fromY] = tileCenter(1903, 7050);
+    const [toX, toY] = tileCenter(1911, 7058);
+    const touches = (stroke, x, y) => stroke.path.some(([px, py]) => px === x && py === y);
+    // Nothing joins the two rooms, and there are no rays where the player left or arrived.
+    expect(ctx.strokes.some((stroke) => touches(stroke, fromX, fromY) && touches(stroke, toX, toY))).toBe(false);
+    expect(ctx.strokes.filter((stroke) => stroke.path.length === 16)).toHaveLength(0);
+    expect(ctx.strokes.filter((stroke) => stroke.dash.length)).toHaveLength(0);
+    // A small house around where they came in.
+    const marks = ctx.strokes.filter((stroke) => stroke.style === LIGHT && stroke.path.length === 5);
+    expect(marks).toHaveLength(1);
+    const xs = marks[0].path.map(([x]) => x);
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(toX, 5);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(8);
+  });
+
   it("draws the part on another floor fainter", () => {
     const ctx = recordingContext();
     const points = [
