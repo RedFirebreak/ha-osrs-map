@@ -33,7 +33,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitest/coverage-v8": "^5.0.2",
-    "chokidar": "^3.6.0",
+    "chokidar": "^5.0.0",
     "clean-css": "^5.3.3",
     "concurrently": "^9.2.1",
     "esbuild": "^0.28.2",
