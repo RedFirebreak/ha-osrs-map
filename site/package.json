@@ -33,14 +33,14 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitest/coverage-v8": "^5.0.2",
-    "chokidar": "^3.6.0",
+    "chokidar": "^5.0.0",
     "clean-css": "^5.3.3",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
-    "glob": "^7.2.0",
+    "glob": "^13.0.0",
     "globals": "^17.13.0",
-    "jsdom": "^27.4.0",
+    "jsdom": "^30.0.0",
     "prettier": "^3.9.9",
     "terser": "^5.44.0",
     "vitest": "^5.0.2"
