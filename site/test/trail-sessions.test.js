@@ -54,7 +54,7 @@ describe("sessionOptions", () => {
   });
 
   it("leaves out a session too long to be asked for as one trail", () => {
-    // A client that never logged out, or a hub that never closed the session.
+    // A client that never stops sending: the hub keeps its session open.
     const stuck = session(new Date(NOW - 8 * 86400 * 1000), null);
     const week = session(new Date(NOW - 9 * 86400 * 1000), new Date(NOW - 2 * 86400 * 1000 + 1));
     const long = session(new Date(NOW - 6 * 86400 * 1000), null);

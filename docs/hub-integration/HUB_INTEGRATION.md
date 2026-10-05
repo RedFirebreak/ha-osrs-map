@@ -102,7 +102,8 @@ one moment to another (`from=&to=`, unix seconds; `to` left out for a session th
 and so are its events (`/api/hub/players/{name}/trail-events`). Refused with a 400: an end that
 isn't after the start, more than 7 days, a start more than 30 days ago, `to` without `from`. The
 answer names what was asked: `days`, or `from` and `to`. The site doesn't offer a session of 7
-days or more (a hub that never closed it).
+days or more. The hub keeps a session open for as long as its client keeps sending, and the game
+logs a player out after 6 hours, so in practice that is a test client that never stops.
 
 Both kinds are read the same way. The older part ends 15 minutes ago or where the span ends,
 whichever is first, and the minute's read asks from there to the span's end. For a session that
