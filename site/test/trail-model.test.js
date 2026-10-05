@@ -25,6 +25,7 @@ describe("decodeTrail", () => {
   it("reads points with their dwell, boat flag and world", () => {
     const trail = decodeTrail({
       step: 120,
+      as_of: T + 200.5,
       points: [
         [3200, 3200, 0, T],
         [3201, 3200, 0, T + 120, 60],
@@ -36,6 +37,7 @@ describe("decodeTrail", () => {
       ],
     });
     expect(trail.step).toBe(120);
+    expect(trail.asOf).toBe(T + 200.5);
     expect(trail.points).toEqual([
       { x: 3200, y: 3201, plane: 0, t0: T, t1: T, boat: false, world: 302 },
       { x: 3201, y: 3201, plane: 0, t0: T + 60, t1: T + 120, boat: false, world: 302 },
@@ -68,6 +70,7 @@ describe("decodeTrail", () => {
       [NaN, 3200, 0, T + 60],
     ]);
     expect(trail.step).toBe(60);
+    expect(trail.asOf).toBeUndefined();
     expect(trail.points).toEqual([{ x: 3200, y: 3201, plane: 0, t0: T, t1: T, boat: false, world: null }]);
   });
 });
@@ -243,6 +246,8 @@ describe("buildTrailModel", () => {
 
 describe("mergeTrail", () => {
   const history = [at(3200, 3200, 0), at(3210, 3200, 1)];
+  // The hub gave that history two minutes in.
+  const AS_OF = T + 120;
   const live = (x, y, seconds) => ({
     x,
     y: y + 1,
@@ -254,29 +259,30 @@ describe("mergeTrail", () => {
     live: true,
   });
 
-  it("lets the hub's samples win for the minutes it has, and adds what came after", () => {
-    const merged = mergeTrail(history, [live(3205, 3200, 30), live(3212, 3200, 100), live(3220, 3200, 130)], null);
+  it("lets the hub win for what was seen before it answered, and adds what came after", () => {
+    const seen = [live(3205, 3200, 30), live(3212, 3200, 100), live(3220, 3200, 130)];
+    const merged = mergeTrail(history, seen, null, AS_OF);
     expect(merged.map((point) => point.x)).toEqual([3200, 3210, 3220]);
     expect(merged[2].live).toBe(true);
   });
 
-  it("adds what was seen right after the last point of a hub that dates them to the tick", () => {
+  it("adds what was seen right after the hub answered, and leaves how the player got there for the guess", () => {
     const labelled = [history[0], { ...history[1], via: "move" }];
-    const merged = mergeTrail(labelled, [live(3205, 3200, 30), live(3212, 3200, 65), live(3220, 3200, 130)], null);
+    const seen = [live(3205, 3200, 30), live(3212, 3200, 65), live(3220, 3200, 130)];
+    const merged = mergeTrail(labelled, seen, null, T + 61);
     expect(merged.map((point) => point.x)).toEqual([3200, 3210, 3212, 3220]);
-    // What the hub didn't label is left for the guess.
     expect(merged.map((point) => point.via)).toEqual([undefined, "move", undefined, undefined]);
   });
 
   it("always ends on the marker while the player is online", () => {
     const head = { x: 3230, y: 3201, plane: 0, boat: false, world: 302, t: T + 200 };
-    const merged = mergeTrail(history, [], head);
+    const merged = mergeTrail(history, [], head, AS_OF);
     expect(merged[merged.length - 1]).toMatchObject({ x: 3230, t0: T + 200, t1: T + 200, live: true });
   });
 
   it("stretches the last stay when the marker is still on it", () => {
     const head = { x: 3210, y: 3201, plane: 0, boat: false, world: 302, t: T + 200 };
-    const merged = mergeTrail(history, [], head);
+    const merged = mergeTrail(history, [], head, AS_OF);
     expect(merged).toHaveLength(2);
     expect(merged[1]).toMatchObject({ t0: T + 60, t1: T + 200 });
     expect(history[1].t1).toBe(T + 60);
@@ -284,7 +290,7 @@ describe("mergeTrail", () => {
 
   it("keeps a return to the same tile after an absence apart from the stay before it", () => {
     const before = { ...live(3220, 3200, 200), t1: T + 260 };
-    const merged = mergeTrail(history, [before, live(3220, 3200, 9000)], null);
+    const merged = mergeTrail(history, [before, live(3220, 3200, 9000)], null, AS_OF);
     expect(merged.map((point) => [point.t0, point.t1])).toEqual([
       [T, T],
       [T + 60, T + 60],
@@ -295,13 +301,88 @@ describe("mergeTrail", () => {
 
   it("counts an online player as still there, however long ago they were last seen to move", () => {
     const head = { x: 3210, y: 3201, plane: 0, boat: false, world: 302, t: T + 9000 };
-    const merged = mergeTrail(history, [], head);
+    const merged = mergeTrail(history, [live(3210, 3200, 64)], head, AS_OF);
     expect(merged).toHaveLength(2);
     expect(merged[1].t1).toBe(T + 9000);
   });
 
   it("is only the live points when the hub has none yet", () => {
-    expect(mergeTrail([], [live(3200, 3200, 10)], null)).toHaveLength(1);
+    expect(mergeTrail([], [live(3200, 3200, 10)], null, AS_OF)).toHaveLength(1);
+  });
+
+  describe("with a marker that is behind the hub", () => {
+    // The plugin sends once a minute and the marker moves a few seconds after
+    // that: 4 here. The hub's points are dated to the tick, and it answered
+    // right after the message of T+180.
+    const ANSWERED = T + 181;
+    const move = { via: "move" };
+    const head = (x, seconds) => ({ x, y: 3201, plane: 0, boat: false, world: 302, t: T + seconds });
+    const tiles = (points) => points.map((point) => point.x);
+
+    it("leaves out where the marker stood while the player was already further on", () => {
+      // Ran east all the time. The marker was on 3400 from the message of
+      // T+120 until that of T+180 got here, and someone else logging in at
+      // T+182 had every marker noted again.
+      const hub = [at(3200, 3200, 0), at(3400, 3200, 2, move), at(3600, 3200, 3, move)];
+      const stood = { ...live(3400, 3200, 124), t1: T + 182 };
+      const seen = [live(3200, 3200, 64), stood, live(3600, 3200, 184)];
+      const merged = mergeTrail(hub, seen, head(3600, 190), ANSWERED);
+      expect(tiles(merged)).toEqual([3200, 3400, 3600]);
+      expect(buildTrailModel(merged).kinds).toEqual(["walk", "walk"]);
+      expect(merged[2]).toMatchObject({ t0: T + 180, t1: T + 190, via: "move" });
+    });
+
+    it("leaves out a marker that got to a tile after the player had left it for good", () => {
+      // Three steps right after the message of T+120, then stood still: the
+      // hub's newest point is from T+122, before the marker reached 3400.
+      const arrived = { ...at(3406, 3200, 2, move), t0: T + 122, t1: T + 122 };
+      const hub = [at(3200, 3200, 0), at(3400, 3200, 2, move), arrived];
+      const seen = [live(3400, 3200, 124), live(3406, 3200, 184)];
+      const merged = mergeTrail(hub, seen, head(3406, 190), ANSWERED);
+      expect(tiles(merged)).toEqual([3200, 3400, 3406]);
+      expect(merged[2]).toMatchObject({ t0: T + 122, t1: T + 190 });
+    });
+
+    it("does so whatever the plugin's clock says", () => {
+      // A minute and a half behind the server's: by the hub's times the
+      // marker reached 3400 after the player was on 3600.
+      const hub = [at(3200, 3200, -1.5), at(3400, 3200, 0.5, move), at(3600, 3200, 1.5, move)];
+      const seen = [live(3400, 3200, 124), live(3600, 3200, 184)];
+      const merged = mergeTrail(hub, seen, head(3600, 190), ANSWERED);
+      expect(tiles(merged)).toEqual([3200, 3400, 3600]);
+      expect(merged[2]).toMatchObject({ t0: T + 90, t1: T + 190 });
+    });
+
+    it("ends where the hub has the player until the marker gets there", () => {
+      const hub = [at(3200, 3200, 0), at(3400, 3200, 2, move), at(3600, 3200, 3, move)];
+      const seen = [live(3400, 3200, 124)];
+      const before = mergeTrail(hub, seen, head(3400, 183), ANSWERED);
+      expect(tiles(before)).toEqual([3200, 3400, 3600]);
+      expect(before[2].t1).toBe(T + 180);
+
+      seen.push(live(3600, 3200, 184));
+      const after = mergeTrail(hub, seen, head(3600, 190), ANSWERED);
+      expect(tiles(after)).toEqual([3200, 3400, 3600]);
+      expect(after[2].t1).toBe(T + 190);
+    });
+
+    it("still ends on a marker that moved after the hub answered", () => {
+      const hub = [at(3200, 3200, 0), at(3400, 3200, 2, move), at(3600, 3200, 3, move)];
+      const seen = [live(3400, 3200, 124), live(3600, 3200, 184), live(3800, 3200, 244)];
+      const merged = mergeTrail(hub, seen, head(3800, 250), ANSWERED);
+      expect(tiles(merged)).toEqual([3200, 3400, 3600, 3800]);
+      expect(merged[3]).toMatchObject({ t0: T + 244, t1: T + 250, live: true });
+    });
+
+    it("still ends on a marker that a history of a point a minute has missed", () => {
+      // The hub keeps one point a minute for a plugin that sends no tiles,
+      // and two messages fell into one minute: the second isn't in it.
+      const hub = [at(3200, 3200, 0), at(3400, 3200, 2, move)];
+      const seen = [live(3400, 3200, 124), live(3600, 3200, 178)];
+      const merged = mergeTrail(hub, seen, head(3600, 190), ANSWERED);
+      expect(tiles(merged)).toEqual([3200, 3400, 3600]);
+      expect(merged[2]).toMatchObject({ t0: T + 190, live: true });
+    });
   });
 });
 

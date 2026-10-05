@@ -34,11 +34,12 @@ export class TrailLayer {
 
   /**
    * Shows (or refreshes) a player's trail from the server's answer; see
-   * decodeTrail. `windowS` is how far back the trail was asked for.
+   * decodeTrail. `windowS` is how far back the trail was asked for. A server
+   * that doesn't say when the hub gave the trail is taken to have asked now.
    */
   setHistory(name, raw, { color, light, windowS = DAY_S }) {
-    const { points, step } = decodeTrail(raw);
-    this.trails.set(name, { history: points, step, color, light, windowS });
+    const { points, step, asOf = this.now() } = decodeTrail(raw);
+    this.trails.set(name, { history: points, step, asOf, color, light, windowS });
     this.rebuild(name);
   }
 
@@ -144,7 +145,7 @@ export class TrailLayer {
     const trail = this.trails.get(name);
     const seen = this.seen.get(name);
     const head = seen?.online && seen.position ? { ...seen.position, t: this.now() } : null;
-    const points = mergeTrail(trail.history, seen?.buffer || [], head);
+    const points = mergeTrail(trail.history, seen?.buffer || [], head, trail.asOf);
     trail.model = buildTrailModel(points, { step: trail.step });
     trail.geometries = [];
     trail.marks = null;

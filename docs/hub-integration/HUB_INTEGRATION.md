@@ -62,6 +62,15 @@ left out, so the backend reads a trail in two parts (`server/src/hub/trails.rs`)
 So a trail costs one request a minute, plus 1 to 10 every ten minutes. A player who made their
 trail private is a 404 on the next read, and their trail is gone within a minute.
 
+**The newest end.** Between two reads the site adds to a trail where it has seen the player's
+marker since. A marker is the hub's own position a few seconds late (the backend's sync, the site's
+poll), so wherever the site saw it before the hub gave the trail is in the trail already. The
+backend sends that time with every trail (`as_of`, by its own clock, which also dates what the site
+sees), and the site adds only what it saw from then on. The times of the hub's points can't decide
+this: they are the plugin's clock, and the newest of them can be a minute older than the message it
+came in. For a few seconds after a read the trail can be ahead of the marker; it then ends where
+the hub has the player, not on the marker.
+
 **Labels and thinning.** A label belongs to two points as the hub returned them, so it is read
 before anything is removed. Consecutive points on one tile become a stay, which keeps the label of
 its first point. A trail of more than 3000 stays, or whose older part has more than 2700, is

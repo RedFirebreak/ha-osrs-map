@@ -395,8 +395,10 @@ fn via_code(via: Option<HubVia>) -> i64 {
 /// sample on the tile, `dwell` the seconds since the first one, `flags` bit 0
 /// is "on a boat", `via` how the player got there from the point before (see
 /// `via_code`); trailing zeros are left out. `worlds` lists
-/// `[point index, world]` wherever the world changes.
-pub(crate) fn trail_json(member: &str, trail: &BuiltTrail) -> Value {
+/// `[point index, world]` wherever the world changes. `as_of` is when the hub
+/// gave the trail's newest points (unix seconds, to the millisecond): the site
+/// adds where it has seen the player since.
+pub(crate) fn trail_json(member: &str, trail: &BuiltTrail, as_of: DateTime<Utc>) -> Value {
     let mut worlds: Vec<[i64; 2]> = Vec::new();
     let points: Vec<Vec<i64>> = trail
         .points
@@ -428,6 +430,7 @@ pub(crate) fn trail_json(member: &str, trail: &BuiltTrail) -> Value {
         "shared": true,
         "step": trail.step,
         "truncated": trail.truncated,
+        "as_of": as_of.timestamp_millis() as f64 / 1000.0,
         "points": points,
         "worlds": worlds,
     })
@@ -562,13 +565,13 @@ async fn fetch_older(context: &HubContext, id: &str, days: i64) -> Result<Value,
     .map_err(|err| HubError::Other(format!("thinning a trail failed: {err}")))?
 }
 
-/// An account's trail over the last `days`, and how long ago its recent part
-/// came from the hub. None when the key can't read the account's trail.
+/// An account's trail over the last `days`, and when its recent part came
+/// from the hub. None when the key can't read the account's trail.
 async fn account_trail(
     context: &HubContext,
     id: &str,
     days: i64,
-) -> Result<Option<(BuiltTrail, Duration)>, HubError> {
+) -> Result<Option<(BuiltTrail, DateTime<Utc>)>, HubError> {
     let older = context
         .cache
         .get_or_fetch(&format!("trail-older:{}:{}", days, id), OLDER_TTL, || {
@@ -594,8 +597,9 @@ async fn account_trail(
         Err(HubError::NotFound) => return Ok(None),
         Err(err) => return Err(err),
     };
+    let as_of = Utc::now() - ChronoDuration::milliseconds(age.as_millis() as i64);
     let recent = only_account(parse(&recent)?)?;
-    Ok(Some((join_recent(older, &recent.points).built(), age)))
+    Ok(Some((join_recent(older, &recent.points).built(), as_of)))
 }
 
 #[get("/hub/trails")]
@@ -622,23 +626,24 @@ pub async fn get_trails(
         }
     }))
     .await;
-    let mut oldest = Duration::ZERO;
+    let mut oldest = Utc::now();
     let mut trails = Vec::with_capacity(members.len());
     for (member, answer) in members.iter().zip(answers) {
         trails.push(match answer? {
-            Some((trail, age)) => {
-                oldest = oldest.max(age);
-                trail_json(member, &trail)
+            Some((trail, as_of)) => {
+                oldest = oldest.min(as_of);
+                trail_json(member, &trail, as_of)
             }
             None => serde_json::json!({ "member": member, "shared": false }),
         });
     }
-    // `as_of` is when the hub last answered: older than a minute means the
-    // hub is unreachable and this is the cache's stale copy.
+    // `as_of` is when the hub last answered, of the trail it gave longest ago:
+    // older than a minute means the hub is unreachable and this is the
+    // cache's stale copy.
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "v": 3,
         "days": days,
-        "as_of": Utc::now().timestamp() - oldest.as_secs() as i64,
+        "as_of": oldest.timestamp(),
         "trails": trails,
     })))
 }
@@ -1588,11 +1593,13 @@ mod tests {
         points[3].is_on_boat = Some(true);
         points[3].world = Some(330);
         points[4].world = Some(330);
-        let json = trail_json("Zezima", &thin_trail(merge_stays(&points), 1000));
+        let as_of = DateTime::from_timestamp_millis((TRAIL_START + 300) * 1000 + 250).unwrap();
+        let json = trail_json("Zezima", &thin_trail(merge_stays(&points), 1000), as_of);
         assert_eq!(json["member"], "Zezima");
         assert_eq!(json["shared"], true);
         assert_eq!(json["step"], 60);
         assert_eq!(json["truncated"], false);
+        assert_eq!(json["as_of"], (TRAIL_START + 300) as f64 + 0.25);
         assert_eq!(
             json["points"],
             serde_json::json!([
@@ -1616,7 +1623,11 @@ mod tests {
             tick(600, 1960, 7050, HubVia::Gap),
             tick(601, 1961, 7050, HubVia::Other),
         ];
-        let json = trail_json("Zezima", &thin_trail(merge_stays(&points), 1000));
+        let json = trail_json(
+            "Zezima",
+            &thin_trail(merge_stays(&points), 1000),
+            Utc::now(),
+        );
         let codes: Vec<i64> = json["points"]
             .as_array()
             .unwrap()

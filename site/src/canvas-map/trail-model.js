@@ -53,14 +53,18 @@ const UNDERGROUND_OFFSET = 6400;
 const FLAG_BOAT = 1;
 const LIVE_MAX_POINTS = 240;
 const LIVE_MAX_AGE_S = 3600;
+// How far a marker is behind the hub at most: the backend asks the hub every
+// 5 s and the site the backend every 2 s. The rest is for a plugin's clock,
+// which dates the hub's points, being behind the server's.
+const MARKER_LAG_S = 15;
 // The server's codes for the hub's labels; 0 is "the hub didn't say".
 const VIA = [undefined, "move", "entrance", "house", "teleport", "gap"];
 
 /**
- * Reads a trail as the server sends it: `{step, points, worlds}` with points
- * `[x, y, plane, unixSeconds, dwell, flags, via]` (see the server's
+ * Reads a trail as the server sends it: `{step, as_of, points, worlds}` with
+ * points `[x, y, plane, unixSeconds, dwell, flags, via]` (see the server's
  * `trail_json`), or the bare list of `[x, y, plane, unixSeconds]` an older
- * server sends.
+ * server sends. `asOf` is when the hub gave the trail, where the server says.
  */
 export function decodeTrail(raw) {
   const rows = Array.isArray(raw) ? raw : raw?.points || [];
@@ -83,7 +87,7 @@ export function decodeTrail(raw) {
     if (VIA[via]) point.via = VIA[via];
     points.push(point);
   });
-  return { points, step: (!Array.isArray(raw) && raw?.step) || IDLE_S };
+  return { points, step: (!Array.isArray(raw) && raw?.step) || IDLE_S, asOf: raw?.as_of ?? undefined };
 }
 
 /**
@@ -232,34 +236,50 @@ export function observeLive(
 }
 
 /**
- * The hub's history followed by what was seen live since. The hub wins for
- * the time it has points for: up to its last point when it labels them (they
- * are dated to the tick then), and for the whole of that minute when it
- * doesn't. `head` (`{x, y, plane, boat, world, t}`, where the marker is while
- * the player is online) is always the last point, so the trail ends on the
- * marker.
+ * The hub's history followed by what was seen live since. `asOf` is when the
+ * hub gave that history, by the clock the live points are dated with. A
+ * marker shows where the hub had the player a few seconds before, so what
+ * the site saw before then the history has too, tile by tile: only a live
+ * point from then on is added. When the marker got there counts, not how
+ * long it stayed: it stands still between two of the plugin's messages
+ * wherever the player goes, and the hub's own times are the plugin's clock.
+ * `head` (`{x, y, plane, boat, world, t}`, where the marker is while the
+ * player is online) is the last point, so the trail ends on the marker. Only
+ * a marker that is itself behind the history is left out: the hub has the
+ * player further on, and the marker follows within seconds.
  */
-export function mergeTrail(history, live, head) {
+export function mergeTrail(history, live, head, asOf) {
   const merged = history.slice();
   const newest = history[history.length - 1];
-  const cutoff = newest ? newest.t1 + (newest.via ? 0 : IDLE_S) : -Infinity;
+  const samePlace = (a, b) => sameTile(a, b) && a.boat === b.boat;
   // Two visits to a tile with an absence in between stay two points; the
   // marker of an online player continues the stay however long it has lasted.
   const append = (point, continues = point.t0 - merged[merged.length - 1]?.t1 <= GAP_S) => {
     const last = merged[merged.length - 1];
-    if (last && continues && sameTile(last, point) && last.boat === point.boat) {
+    if (last && continues && samePlace(last, point)) {
       merged[merged.length - 1] = { ...last, t1: Math.max(last.t1, point.t1) };
     } else {
       const t0 = last ? Math.max(point.t0, last.t1) : point.t0;
       merged.push({ ...point, t0, t1: Math.max(point.t1, t0) });
     }
   };
+  const isNews = (point) => !newest || point.t0 >= asOf;
   for (const point of live) {
-    if (point.t1 > cutoff) append(point);
+    if (isNews(point)) append(point);
   }
   if (head) {
     const { t, ...position } = head;
-    append({ world: null, ...position, boat: Boolean(head.boat), t0: t, t1: t, live: true }, true);
+    const marker = { world: null, ...position, boat: Boolean(head.boat), t0: t, t1: t, live: true };
+    const arrived = live[live.length - 1];
+    // A history without every tile (a plugin that sends none, so a point a
+    // minute) can miss where the marker is: its newest point is older then.
+    const behind =
+      arrived &&
+      samePlace(arrived, marker) &&
+      !isNews(arrived) &&
+      !samePlace(newest, marker) &&
+      newest.t1 >= arrived.t0 - MARKER_LAG_S;
+    if (!behind) append(marker, true);
   }
   return merged;
 }
