@@ -82,7 +82,7 @@ export function clusterPoints(points, cellPx) {
  * Stacks screen points that are within `px` of each other: `points` are
  * `{x, y, plane, ...}`; returns `{x, y, plane, members}`, each at the place of
  * its first member. One pass over the points, whatever their number: a
- * month of a trail's events is thousands of them.
+ * week of a trail's events is thousands of them.
  */
 export function stackPoints(points, px) {
   const cells = new Map();

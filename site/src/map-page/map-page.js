@@ -36,10 +36,18 @@ function staleNotice(asOf) {
   return `Hub data from ${clockTime(asOf * 1000)}`;
 }
 
-/** The day a trail (as the server sends it) starts, e.g. "26 Sep". */
-function trailStartDay(trail) {
+// A trail that starts within this is said to start at a time, not only on a day.
+const TRAIL_START_TIME_MS = 2 * 86400 * 1000;
+
+/**
+ * When a trail (as the server sends it) starts: "26 Sep", and "5 Oct 14:10"
+ * when that is so lately that the day alone says little.
+ */
+function trailStart(trail) {
   const [, , , time, dwell = 0] = trail.points[0];
-  return shortDay((time - dwell) * 1000);
+  const start = (time - dwell) * 1000;
+  const day = shortDay(start);
+  return Date.now() - start < TRAIL_START_TIME_MS ? `${day} ${clockTime(start)}` : day;
 }
 
 /** The trail length chosen last time, when the select still offers it. */
@@ -300,7 +308,7 @@ export class MapPage extends BaseElement {
         const notShared = trail && !trail.shared;
         const empty = trail?.shared && trail.points.length === 0;
         // The server cuts a trail with more than it can send down to its newest part.
-        const since = trail?.shared && trail.truncated && !empty ? trailStartDay(trail) : null;
+        const since = trail?.shared && trail.truncated && !empty ? trailStart(trail) : null;
         const note = notShared ? " (not shared)" : empty ? " (no points)" : since ? ` (since ${since})` : "";
         chip.textContent = `${name}${note}`;
         chip.classList.toggle("map-page__trail-chip--off", Boolean(notShared || empty));
