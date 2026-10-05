@@ -3,6 +3,7 @@ const path = require("path");
 const { minify } = require("terser");
 const { performance } = require("perf_hooks");
 const CleanCSS = require("clean-css");
+const { buildMapJson } = require("./scripts/map-json");
 
 const cleanCSSInstance = new CleanCSS({});
 const productionMode = process.argv.some((arg) => arg === "--prod");
@@ -13,36 +14,7 @@ if (productionMode) {
 const mapJsonPlugin = {
   name: "mapTilesJson",
   setup() {
-    const mapImageFiles = fs
-      .readdirSync("public/map")
-      .filter((file) => file.endsWith(".webp"))
-      .map((file) => path.basename(file, ".webp"));
-
-    const tiles = [[], [], [], []];
-    for (const mapImageFile of mapImageFiles) {
-      const [plane, x, y] = mapImageFile.split("_").map((x) => parseInt(x, 10));
-      tiles[plane].push(((x + y) * (x + y + 1)) / 2 + y);
-    }
-
-    const icons = JSON.parse(fs.readFileSync("public/data/map_icons.json", "utf8"));
-
-    const labels = JSON.parse(fs.readFileSync("public/data/map_labels.json", "utf8"));
-
-    let links;
-    try {
-      links = JSON.parse(fs.readFileSync("public/data/map_links.json", "utf8"));
-    } catch {
-      links = {};
-    }
-
-    const result = {
-      tiles,
-      icons,
-      labels,
-      links,
-    };
-
-    fs.writeFileSync("public/data/map.json", JSON.stringify(result));
+    fs.writeFileSync("public/data/map.json", JSON.stringify(buildMapJson("public")));
   },
 };
 

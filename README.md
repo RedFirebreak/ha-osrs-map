@@ -262,6 +262,19 @@ game cache when this fork stopped merging from it. Nothing refreshes them: an it
 list is left out of inventories and gear, and a new area is missing from the map, until those files are
 generated again.
 
+Two things are made from those map files, and committed beside them, so the map can be zoomed out to the
+whole overworld: the terrain shrunk into three coarser levels (`site/public/map/zoom/`, a few dozen images
+where the map tiles would be thousands) and the list of labels that name a region or a sea
+(`map_major_labels.json`), the only names shown that far out. When the map tiles or the labels change,
+make them again:
+
+```bash
+cd site && npm install --no-save sharp && node scripts/generate-map-levels.js
+```
+
+It makes the levels for all four floors; `--planes 0,1` makes them again for some. A floor without
+levels is drawn from its map tiles at any zoom.
+
 ## Project structure
 
 ```

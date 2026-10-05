@@ -15,47 +15,8 @@ vi.mock("../src/rs-tooltip/tooltip-manager", () => ({
 
 import { ICON_SPRITE_SIZE } from "../src/canvas-map/canvas-map";
 import { GAME_TILES_PER_MAP_TILE } from "../src/canvas-map/map-space";
-import { centerOn as centerCameraOn, createMap as createMapInstance } from "./helpers/map";
+import { centerOn as centerCameraOn, createMap as createMapInstance, createMockCtx, setMapLinks } from "./helpers/map";
 import { GuildData } from "../src/data/guild-data";
-
-function createMockCtx() {
-  return {
-    resetTransform: vi.fn(),
-    setTransform: vi.fn(),
-    fillStyle: "",
-    strokeStyle: "",
-    lineWidth: 0,
-    font: "",
-    textAlign: "",
-    globalAlpha: 1,
-    beginPath: vi.fn(),
-    rect: vi.fn(),
-    stroke: vi.fn(),
-    fill: vi.fn(),
-    closePath: vi.fn(),
-    clearRect: vi.fn(),
-    drawImage: vi.fn(),
-    fillText: vi.fn(),
-    strokeText: vi.fn(),
-    arc: vi.fn(),
-    save: vi.fn(),
-    restore: vi.fn(),
-    strokeRect: vi.fn(),
-    fillRect: vi.fn(),
-    measureText: vi.fn((text) => ({ width: text.length * 7 })),
-    imageSmoothingEnabled: true,
-  };
-}
-
-function setMapLinks(map, links) {
-  map.linksByPlane = {};
-  for (const [key, destination] of Object.entries(links)) {
-    const [x, y, plane] = key.split(",").map(Number);
-    if (!map.linksByPlane[plane]) map.linksByPlane[plane] = [];
-    const linkKey = `${x},${y + 1},${plane}`;
-    map.linksByPlane[plane].push({ key: linkKey, x, y: y + 1, plane, destination });
-  }
-}
 
 describe("Animation", () => {
   it("constructs with defaults", () => {
@@ -1386,7 +1347,7 @@ describe("CanvasMap.drawLocations with linked icon highlights", () => {
         },
       },
     };
-    map.tilesInView = [{ regionX: 10, regionY: 20 }];
+    map.view = { left: 10, right: 11, top: 20, bottom: 19 };
     map.plane = 1;
     map.camera.zoom.current = 1;
     map.linkedIconPositions = new Set(["100,200,0"]);
