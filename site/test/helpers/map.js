@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { Animation } from "../../src/canvas-map/animation";
 import { CanvasMap } from "../../src/canvas-map/canvas-map";
 
@@ -29,6 +30,47 @@ export function createMap() {
   map.updateRequested = 0;
   map.coordinatesDisplay = { innerText: "" };
   return map;
+}
+
+/** A canvas context that draws nothing and remembers what it was asked to. */
+export function createMockCtx() {
+  return {
+    resetTransform: vi.fn(),
+    setTransform: vi.fn(),
+    fillStyle: "",
+    strokeStyle: "",
+    lineWidth: 0,
+    font: "",
+    textAlign: "",
+    globalAlpha: 1,
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    stroke: vi.fn(),
+    fill: vi.fn(),
+    closePath: vi.fn(),
+    clearRect: vi.fn(),
+    drawImage: vi.fn(),
+    fillText: vi.fn(),
+    strokeText: vi.fn(),
+    arc: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    strokeRect: vi.fn(),
+    fillRect: vi.fn(),
+    measureText: vi.fn((text) => ({ width: text.length * 7 })),
+    imageSmoothingEnabled: true,
+  };
+}
+
+/** Gives the map its links, keyed `"x,y,plane"` as map.json has them. */
+export function setMapLinks(map, links) {
+  map.linksByPlane = {};
+  for (const [key, destination] of Object.entries(links)) {
+    const [x, y, plane] = key.split(",").map(Number);
+    if (!map.linksByPlane[plane]) map.linksByPlane[plane] = [];
+    const linkKey = `${x},${y + 1},${plane}`;
+    map.linksByPlane[plane].push({ key: linkKey, x, y: y + 1, plane, destination });
+  }
 }
 
 /** Puts a game tile in the middle of the map, at once. */

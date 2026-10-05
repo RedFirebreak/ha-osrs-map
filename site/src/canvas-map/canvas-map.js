@@ -9,12 +9,21 @@ import { guildData } from "../data/guild-data";
 import { escapeHtml } from "../data/format";
 import { clusterPoints } from "./event-markers";
 import { EventLayer } from "./event-layer";
+import { MAX_LEVEL, ancestorSource, levelForZoom, levelTileRect, levelTilesInView, minZoomToFit } from "./map-levels";
 import { GAME_TILES_PER_MAP_TILE, MAP_TILE_SIZE, PIXELS_PER_GAME_TILE, tileOrigin } from "./map-space";
 import { TrailLayer } from "./trail-layer";
 import { drawerInset } from "../player-profile/drawer-inset";
 import { formatTrailTime } from "./trail-model";
 
 export const ICON_SPRITE_SIZE = 15;
+// The map's icons keep that size on screen down to this zoom. Below it they
+// shrink with the map, but not to less than ICON_MIN_PX.
+const ICON_SHRINK_BELOW_ZOOM = 0.5;
+const ICON_MIN_PX = 7;
+
+// Below this zoom the map is an overview: of its names only those of the
+// regions and the seas are shown, and its links are neither drawn nor clicked.
+const OVERVIEW_BELOW_ZOOM = 0.3;
 
 // A press that moves further than this is a drag of the map, not a click.
 const DRAG_THRESHOLD_PX = 5;
@@ -91,7 +100,7 @@ export class CanvasMap extends BaseElement {
         progress: 0.5,
       }),
       maxZoom: 6,
-      minZoom: 0.5,
+      minZoom: minZoomToFit(this.canvas.width, this.canvas.height),
       isDragging: false,
     };
     this.cursor = {
@@ -143,10 +152,17 @@ export class CanvasMap extends BaseElement {
     for (const x of data.tiles) {
       this.validTiles.push(new Set(x));
     }
+    // The coarser tiles there are, per level and floor; see map-levels.js.
+    this.validLevelTiles = {};
+    for (const [level, floors] of Object.entries(data.levels || {})) {
+      this.validLevelTiles[level] = floors.map((tiles) => new Set(tiles));
+    }
 
     this.locations = this.parseIntKeys(data.icons);
     this.buildIconIndex();
     this.mapLabels = this.parseIntKeys(data.labels);
+    // The names of the regions and the seas, each with its rank: the first is kept when two meet.
+    this.majorLabels = new Map((data.majorLabels || []).map((id, rank) => [id, rank]));
 
     this.locationIconsSheet = new Image();
     this.locationIconsSheet.src = "/map/icons/map_icons.webp";
@@ -420,9 +436,16 @@ export class CanvasMap extends BaseElement {
     return `${x},${y},${plane}`;
   }
 
+  /** The size of a map icon, in map pixels. */
   iconCanvasSize() {
-    const scale = Math.min(this.camera.zoom.current, 3);
-    return ICON_SPRITE_SIZE / scale;
+    const zoom = this.camera.zoom.current;
+    if (zoom >= ICON_SHRINK_BELOW_ZOOM) return ICON_SPRITE_SIZE / Math.min(zoom, 3);
+    return Math.max(ICON_SPRITE_SIZE / ICON_SHRINK_BELOW_ZOOM, ICON_MIN_PX / zoom);
+  }
+
+  /** Whether the map is zoomed out so far that it only gives an overview. */
+  isOverview() {
+    return this.camera.zoom.current < OVERVIEW_BELOW_ZOOM;
   }
 
   mapLinkScreenCenter(x, y) {
@@ -476,6 +499,7 @@ export class CanvasMap extends BaseElement {
 
   /** The link at a place on the canvas, if any. */
   linkAt(cx, cy) {
+    if (this.isOverview()) return null;
     const canvasSize = this.iconCanvasSize();
     const halfSize = (canvasSize * this.camera.zoom.current) / 2;
     let bestLink = null;
@@ -1064,6 +1088,7 @@ export class CanvasMap extends BaseElement {
   }
 
   drawMapLinks() {
+    if (this.isOverview()) return;
     const links = this.linksOnCurrentPlane().filter((l) => !this.linkIconOverrides?.[l.key]);
     if (links.length === 0) return;
     const destinationSize = this.iconCanvasSize();
@@ -1100,9 +1125,11 @@ export class CanvasMap extends BaseElement {
     const shift = destinationSize / 2;
 
     const currentPlane = this.floor;
-    for (const tile of this.tilesInView) {
-      const locations = this.locations[tile.regionX]?.[tile.regionY];
-      if (locations) {
+    const withLinks = !this.isOverview();
+    for (let tileX = this.view.left; tileX < this.view.right; ++tileX) {
+      for (let tileY = this.view.top; tileY > this.view.bottom; --tileY) {
+        const locations = this.locations[tileX]?.[tileY];
+        if (!locations) continue;
         for (const [spriteIndex, coordinates] of Object.entries(locations)) {
           for (let i = 0; i < coordinates.length; i += 3) {
             if (coordinates[i + 2] !== currentPlane) continue;
@@ -1126,7 +1153,7 @@ export class CanvasMap extends BaseElement {
             } catch (ex) {
               console.error(`failed to draw map icon ${spriteIndex} ${coordinates}`, ex);
             }
-            if (this.linkedIconPositions?.has(this.positionKey(iconX, iconY, currentPlane))) {
+            if (withLinks && this.linkedIconPositions?.has(this.positionKey(iconX, iconY, currentPlane))) {
               this.drawLinkHighlight(drawX + destinationSize / 2, drawY + destinationSize / 2, destinationSize, false);
             }
           }
@@ -1139,6 +1166,9 @@ export class CanvasMap extends BaseElement {
     if (!this.mapLabels) return;
     this.mapLabelImages = this.mapLabelImages || new Map();
     const scale = Math.min(this.camera.zoom.current, 2);
+    // An overview names the regions and the seas only, when the map says which names those are.
+    const majorOnly = this.isOverview() && this.majorLabels?.size > 0;
+    const shown = [];
 
     for (let tileX = this.view.left - 1; tileX < this.view.right + 1; ++tileX) {
       for (let tileY = this.view.top + 1; tileY > this.view.bottom; --tileY) {
@@ -1147,6 +1177,7 @@ export class CanvasMap extends BaseElement {
           for (let i = 0; i < labels.length; i += 3) {
             const [x, y] = this.gamePositionToCanvas(labels[i], labels[i + 1]);
             const labelId = labels[i + 2];
+            if (majorOnly && !this.majorLabels.has(labelId)) continue;
 
             const key = this.coordinateKey(x, y);
             let mapLabelImage = this.mapLabelImages.get(key);
@@ -1161,13 +1192,15 @@ export class CanvasMap extends BaseElement {
             if (mapLabelImage.loaded) {
               const width = mapLabelImage.width / scale;
               const height = mapLabelImage.height / scale;
-              const shiftX = width / 2;
-
-              try {
-                this.ctx.drawImage(mapLabelImage, Math.round(x - shiftX), y, Math.round(width), Math.round(height));
-              } catch (ex) {
-                console.error(`failed to draw map image label ${labelId}`, ex);
-              }
+              shown.push({
+                key,
+                labelId,
+                image: mapLabelImage,
+                x: Math.round(x - width / 2),
+                y,
+                width: Math.round(width),
+                height: Math.round(height),
+              });
             } else if (!mapLabelImage.onload) {
               mapLabelImage.onload = () => {
                 mapLabelImage.loaded = true;
@@ -1178,74 +1211,116 @@ export class CanvasMap extends BaseElement {
         }
       }
     }
+
+    // The names keep their size on screen, so far zoomed out they run into each other.
+    let kept = null;
+    if (majorOnly) {
+      shown.sort((a, b) => this.majorLabels.get(a.labelId) - this.majorLabels.get(b.labelId));
+      kept = CanvasMap.placeLabels(shown);
+    }
+    for (const label of shown) {
+      if (kept && !kept.has(label.key)) continue;
+      try {
+        this.ctx.drawImage(label.image, label.x, label.y, label.width, label.height);
+      } catch (ex) {
+        console.error(`failed to draw map image label ${label.labelId}`, ex);
+      }
+    }
+  }
+
+  /** The level the terrain is drawn from: the one for the zoom, or the nearest finer one the floor has. */
+  terrainLevel() {
+    let level = levelForZoom(this.camera.zoom.current);
+    while (level > 0 && !this.validLevelTiles?.[level]?.[this.floor]?.size) --level;
+    return level;
+  }
+
+  /** Whether the floor shown has a tile of a level. Until the map's data is in, every map tile may be there. */
+  hasTerrainTile(level, x, y) {
+    const valid = level === 0 ? this.validTiles : this.validLevelTiles[level];
+    return !valid || Boolean(valid[this.floor]?.has(this.cantor(x, y)));
+  }
+
+  /** The image of a tile of a level on the floor shown. One that wasn't asked for yet is with `load`. */
+  terrainTile(level, x, y, load) {
+    const name = `${this.floor}_${x}_${y}`;
+    let tiles = this.tiles[this.floor];
+    let key = this.cantor(x, y);
+    if (level > 0) {
+      this.coarseTiles = this.coarseTiles || new Map();
+      tiles = this.coarseTiles;
+      key = `${level}/${name}`;
+    }
+    let tile = tiles.get(key);
+    if (!tile && load) {
+      tile = new Image(MAP_TILE_SIZE, MAP_TILE_SIZE);
+      tile.src = level === 0 ? `/map/${name}.webp` : `/map/zoom/${level}/${name}.webp`;
+      tiles.set(key, tile);
+    }
+    return tile;
+  }
+
+  /**
+   * Fills a tile's square from the nearest coarser tile that is loaded, for
+   * as long as the tile itself isn't there: zooming in then sharpens what was
+   * on the map, where it would go blank first.
+   */
+  drawCoarserTerrain(level, x, y, rect) {
+    for (let steps = 1; level + steps <= MAX_LEVEL; ++steps) {
+      const from = ancestorSource(steps, x, y);
+      const tile = this.terrainTile(level + steps, from.x, from.y, false);
+      if (!tile?.loaded) continue;
+      try {
+        this.ctx.drawImage(tile, from.sx, from.sy, from.size, from.size, rect.x, rect.y, rect.size, rect.size);
+      } catch {}
+      return;
+    }
   }
 
   drawMapSquaresInView(loadNewTiles) {
-    const top = this.view.top;
-    const left = this.view.left;
-    const right = this.view.right;
-    const bottom = this.view.bottom;
-    const tiles = this.tiles[this.floor];
-    const imageSize = MAP_TILE_SIZE;
+    const level = this.terrainLevel();
     this.tilesInView = [];
 
-    for (let tileX = left; tileX < right; ++tileX) {
-      const tileWorldX = tileX * imageSize;
-      for (let tileY = top; tileY > bottom; --tileY) {
-        const i = this.cantor(tileX, tileY);
-        const tileWorldY = tileY * imageSize;
-        if (this.validTiles && !this.validTiles[this.floor]?.has(i)) {
-          this.ctx.clearRect(tileWorldX, -tileWorldY, imageSize, imageSize);
-          continue;
-        }
-        let tile = tiles.get(i);
+    for (const [tileX, tileY] of levelTilesInView(level, this.view)) {
+      const rect = levelTileRect(level, tileX, tileY);
+      if (!this.hasTerrainTile(level, tileX, tileY)) {
+        this.ctx.clearRect(rect.x, rect.y, rect.size, rect.size);
+        continue;
+      }
+      const tile = this.terrainTile(level, tileX, tileY, loadNewTiles);
+      if (!tile) continue;
 
-        if (!tile) {
-          if (!loadNewTiles) continue;
-          tile = new Image(MAP_TILE_SIZE, MAP_TILE_SIZE);
-          const tileFileBaseName = `${this.floor}_${tileX}_${tileY}`;
-          tile.src = `/map/${tileFileBaseName}.webp`;
-          tile.regionX = tileX;
-          tile.regionY = tileY;
-          tiles.set(i, tile);
+      this.tilesInView.push(tile);
+      tile.loaded = tile.loaded || tile.complete;
+      if (tile.loaded && !tile.animation) {
+        // A cached image can be complete before onload was attached, and then
+        // onload never fires.
+        tile.animation = new Animation({ current: 0, target: 1, time: 300 });
+      }
+      const alpha = tile.loaded ? tile.animation.current : 0;
+      // A map tile covers its square, so that is cleared only while the tile fades in. A
+      // coarser tile is see-through where there are no map tiles: its square is cleared
+      // every time, or what was drawn there before the map moved would stay.
+      // NOTE: If we try to clear the whole canvas instead, chromium browers will show a
+      // small border around the tiles.
+      if (alpha < 1 || level > 0) this.ctx.clearRect(rect.x, rect.y, rect.size, rect.size);
+      if (alpha < 1) this.drawCoarserTerrain(level, tileX, tileY, rect);
+      if (tile.loaded) {
+        this.ctx.globalAlpha = alpha;
+        try {
+          this.ctx.drawImage(tile, rect.x, rect.y, rect.size, rect.size);
+        } catch (ex) {
+          console.error(`failed to draw map tile ${tile.src}`, ex);
         }
-
-        this.tilesInView.push(tile);
-        tile.loaded = tile.loaded || tile.complete;
-        if (tile.loaded && !tile.animation) {
-          // A cached image can be complete before onload was attached, and then
-          // onload never fires.
+        this.ctx.globalAlpha = 1;
+      } else if (!tile.onload) {
+        tile.onload = () => {
           tile.animation = new Animation({ current: 0, target: 1, time: 300 });
-        }
-        if (tile.loaded && tile.animation) {
-          const alpha = tile.animation.current;
-          this.ctx.globalAlpha = alpha;
-          try {
-            if (alpha < 1) {
-              // NOTE: Clearing only the area of the image tile while it fades in. If we try
-              // to clear the whole canvas instead, chromium browers will show a small border
-              // around the tiles.
-              this.ctx.clearRect(tileWorldX, -tileWorldY, imageSize, imageSize);
-            }
-            try {
-              this.ctx.drawImage(tile, tileWorldX, -tileWorldY);
-            } catch (ex) {
-              console.error(`failed to draw map tile ${this.floor}_${tileX}_${tileY}`, ex);
-            }
-          } catch {}
-        } else if (!tile.onload) {
-          tile.onload = () => {
-            tile.animation = new Animation({ current: 0, target: 1, time: 300 });
-            tile.loaded = true;
-            this.requestUpdate();
-          };
-        } else {
-          this.ctx.clearRect(tileWorldX, -tileWorldY, imageSize, imageSize);
-        }
+          tile.loaded = true;
+          this.requestUpdate();
+        };
       }
     }
-
-    this.ctx.globalAlpha = 1;
   }
 
   /**
@@ -1277,6 +1352,8 @@ export class CanvasMap extends BaseElement {
     this.canvas.width = this.offsetWidth;
     this.canvas.height = this.offsetHeight;
     this.ctx.imageSmoothingEnabled = false;
+    // What fits the map changes with its size.
+    if (this.camera) this.camera.minZoom = minZoomToFit(this.canvas.width, this.canvas.height);
 
     this.requestUpdate();
   }

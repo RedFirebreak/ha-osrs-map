@@ -29,6 +29,11 @@ const CHEVRON_SPEED = 18;
 const MAX_CHEVRONS = 150;
 const BURST_RAYS = 8;
 const GHOST_RADIUS = 6.5;
+// Far zoomed out a ghost of that size is lost among all there is on the map: it
+// grows from the first zoom down to the second, to this many times its size.
+const GHOST_GROWS_BELOW_ZOOM = 0.5;
+const GHOST_GROWN_AT_ZOOM = 0.25;
+const GHOST_GROWTH = 1.6;
 // Where a player vanishes or appears in a teleport that is played out: how
 // wide the rings around them start, and how high the streak of light rises.
 const HOP_RINGS = [26, 15];
@@ -454,11 +459,17 @@ function drawReplay(ctx, view, trail, mode) {
   return false;
 }
 
+/** The ghost's radius on screen at a zoom, in pixels. */
+function ghostRadius(zoom) {
+  const grown = (GHOST_GROWS_BELOW_ZOOM - zoom) / (GHOST_GROWS_BELOW_ZOOM - GHOST_GROWN_AT_ZOOM);
+  return GHOST_RADIUS * (1 + (GHOST_GROWTH - 1) * Math.min(Math.max(grown, 0), 1));
+}
+
 /** The player in a replay: a dot in their colour, `scale` (0..1) of its full size. */
 function drawGhost(ctx, view, trail, x, y, plane, scale = 1) {
   if (scale <= 0) return;
   ctx.setLineDash([]);
-  dot(ctx, x, y, (GHOST_RADIUS * scale) / view.zoom);
+  dot(ctx, x, y, (ghostRadius(view.zoom) * scale) / view.zoom);
   ctx.globalAlpha = floorAlpha(plane, view) < 1 ? 0.5 : 1;
   ctx.fillStyle = trail.color;
   ctx.fill();

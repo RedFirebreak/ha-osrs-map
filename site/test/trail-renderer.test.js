@@ -282,6 +282,32 @@ describe("drawTrail, replay", () => {
     expect(ghost[0].path[0][0]).toBeLessThan(x1);
   });
 
+  it("makes the ghost larger on screen where the map is zoomed far out", () => {
+    const [cx, cy] = tileCenter(3215, 3202);
+    /** The ghost's radius in pixels on screen at a zoom. */
+    function onScreen(zoom) {
+      const view = viewOf(3215, 3202, {
+        zoom,
+        minX: cx - 400 / zoom,
+        maxX: cx + 400 / zoom,
+        minY: cy - 300 / zoom,
+        maxY: cy + 300 / zoom,
+      });
+      const ctx = recordingContext();
+      drawTrail(ctx, view, trailOf(walk), replayAt(2.5));
+      const ghost = ctx.fills.filter(
+        (fill) => fill.style === COLOR && fill.path.length === 1 && fill.path[0][2] * zoom > 5,
+      );
+      expect(ghost).toHaveLength(1);
+      return ghost[0].path[0][2] * zoom;
+    }
+    expect(onScreen(1)).toBeCloseTo(6.5);
+    expect(onScreen(0.5)).toBeCloseTo(6.5);
+    expect(onScreen(0.375)).toBeCloseTo(6.5 * 1.3);
+    expect(onScreen(0.25)).toBeCloseTo(6.5 * 1.6);
+    expect(onScreen(0.1)).toBeCloseTo(6.5 * 1.6);
+  });
+
   it("draws nothing bright before the trail starts", () => {
     const ctx = recordingContext();
     drawTrail(ctx, viewOf(3215, 3202), trailOf(walk), replayAt(10));
