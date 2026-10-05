@@ -11,7 +11,7 @@ use crate::hub::fetch::{cached, history_enabled, parse, HistoryError, Period};
 use crate::hub::models::{
     HubAccountGains, HubEquipmentHistory, HubEvent, HubItems, HubSessions, HubWealth,
 };
-use crate::hub::trails::MAX_TRAIL_DAYS;
+use crate::hub::trails::Span;
 use crate::hub::HubContext;
 use actix_web::{get, web, HttpResponse};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -64,6 +64,10 @@ pub(crate) struct LimitQuery {
 pub(crate) struct TrailEventsQuery {
     #[serde(default)]
     days: Option<i64>,
+    #[serde(default)]
+    from: Option<i64>,
+    #[serde(default)]
+    to: Option<i64>,
     #[serde(default)]
     min_loot: Option<i64>,
 }
@@ -286,24 +290,24 @@ where
     Ok(events)
 }
 
-/// An account's events since `from`, newest first: only those of `types`
-/// worth `min_value` or more when given.
+/// An account's events from `from` to `to` (to now without one), newest
+/// first: only those of `types` worth `min_value` or more when given.
 async fn fetch_range(
     client: &Arc<HubClient>,
     account: &str,
-    from: &str,
+    (from, to): (DateTime<Utc>, Option<DateTime<Utc>>),
     types: Option<&str>,
     min_value: Option<i64>,
 ) -> Result<Vec<Value>, HubError> {
-    let since: DateTime<Utc> = from
-        .parse()
-        .map_err(|err| HubError::Other(format!("bad range start {from}: {err}")))?;
-    read_range(since, RANGE_EVENTS_MAX, |cursor| {
+    let events = read_range(from, RANGE_EVENTS_MAX, |cursor| {
         let mut query = vec![
             ("accounts", account.to_owned()),
-            ("from", from.to_owned()),
+            ("from", from.to_rfc3339()),
             ("limit", RANGE_PAGE.to_string()),
         ];
+        if let Some(to) = to {
+            query.push(("to", to.to_rfc3339()));
+        }
         if let Some(types) = types {
             query.push(("types", types.to_owned()));
         }
@@ -320,7 +324,17 @@ async fn fetch_range(
             Ok((events, meta.next_cursor))
         }
     })
-    .await
+    .await?;
+    Ok(until(events, to))
+}
+
+/// The events up to `to`. The hub leaves out what came after it; a hub from
+/// before it read a time range gives its newest whatever was asked for.
+fn until(mut events: Vec<Value>, to: Option<DateTime<Utc>>) -> Vec<Value> {
+    if let Some(to) = to {
+        events.retain(|event| occurred_at(event).is_none_or(|at| at <= to));
+    }
+    events
 }
 
 /// Newest first; events without a readable time last.
@@ -336,10 +350,11 @@ fn events_json<'a>(events: impl Iterator<Item = &'a HubEvent>, context: &HubCont
         .collect()
 }
 
-/// The member's events of the last `days` (default 1), newest first, for
-/// their trail: every kind the map shows, drops only from `min_loot` gp. Drops
-/// are read apart from the rest, so that a week of small ones doesn't crowd
-/// out the levels and deaths.
+/// The member's events over the span of their trail (the last `days`,
+/// default 1, or `from` to `to` as for the trail itself), newest first:
+/// every kind the map shows, drops only from `min_loot` gp. Drops are read
+/// apart from the rest, so that a week of small ones doesn't crowd out the
+/// levels and deaths.
 #[get("/hub/players/{member}/trail-events")]
 pub async fn get_player_trail_events(
     _auth: Authenticated,
@@ -350,21 +365,26 @@ pub async fn get_player_trail_events(
 ) -> Result<HttpResponse, HistoryError> {
     history_enabled(&config)?;
     let hub_id = hub_id(&context, &path)?;
-    let days = clamp_days(query.days, 1, MAX_TRAIL_DAYS);
+    let now = Utc::now();
+    let span = Span::of(query.days, query.from, query.to, now.timestamp())
+        .map_err(HistoryError::BadRequest)?;
     let min_loot = query.min_loot.unwrap_or(0).max(0);
-    let key = format!("/events?accounts={hub_id}&days={days}&min_loot={min_loot}");
-    let from = from_days(days);
+    let key = format!(
+        "/events?accounts={hub_id}&span={}&min_loot={min_loot}",
+        span.key()
+    );
+    let range = (span.start(now), span.end());
     let client = &context.client;
     let events = context
         .cache
         .get_or_fetch(&key, RANGE_EVENTS_TTL, || async {
             let events = if min_loot > 0 {
                 let mut events =
-                    fetch_range(client, &hub_id, &from, Some(LOOT_TYPES), Some(min_loot)).await?;
-                events.extend(fetch_range(client, &hub_id, &from, Some(OTHER_TYPES), None).await?);
+                    fetch_range(client, &hub_id, range, Some(LOOT_TYPES), Some(min_loot)).await?;
+                events.extend(fetch_range(client, &hub_id, range, Some(OTHER_TYPES), None).await?);
                 newest_first(events)
             } else {
-                fetch_range(client, &hub_id, &from, None, None).await?
+                fetch_range(client, &hub_id, range, None, None).await?
             };
             Ok(Value::Array(events))
         })
@@ -411,8 +431,18 @@ mod tests {
         assert_eq!(clamp_days(None, 7, 30), 7);
         assert_eq!(clamp_days(Some(500), 7, 30), 30);
         assert_eq!(clamp_days(Some(0), 7, 30), 1);
-        // The events along a trail go no further back than a trail does.
-        assert_eq!(clamp_days(Some(30), 1, MAX_TRAIL_DAYS), 7);
+    }
+
+    #[test]
+    fn the_events_of_a_span_end_where_it_does() {
+        // What a hub that doesn't read a time range hands back: its newest.
+        let events = vec![event(1, 5), event(2, 30), event(3, 90)];
+        let hour_ago = Utc::now() - ChronoDuration::minutes(60);
+        let kept = until(events, Some(hour_ago));
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0]["id"], event(3, 90)["id"]);
+        // A span that runs until now keeps them all.
+        assert_eq!(until(vec![event(1, 5), event(2, 30)], None).len(), 2);
     }
 
     const RANGE_CURSOR: &str = "cjE6MTc5MDY5MDI4MjUxMToxNw";

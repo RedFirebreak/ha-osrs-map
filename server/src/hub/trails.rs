@@ -37,6 +37,9 @@ pub(crate) const MAX_TRAILS: usize = 8;
 /// The longest trail there is, in days. What fits of a busy player's trail is
 /// far less than a week of play, so further back there is nothing to show.
 pub(crate) const MAX_TRAIL_DAYS: i64 = 7;
+/// How long ago a span (a play session) may start: the hub keeps its points
+/// for 30 days unless it was told otherwise.
+const OLDEST_SPAN_DAYS: i64 = 30;
 
 /// A player standing still keeps one point a minute, so the points of a trail
 /// that wasn't thinned are never further apart than this without a gap.
@@ -439,6 +442,110 @@ pub(crate) struct TrailsQuery {
     members: Option<String>,
     #[serde(default)]
     days: Option<i64>,
+    #[serde(default)]
+    from: Option<i64>,
+    #[serde(default)]
+    to: Option<i64>,
+}
+
+/// The time a trail is asked for: the last so many days, or from one moment
+/// to another (unix seconds), which is how a play session is asked for. A
+/// session that is still going on has no end.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Span {
+    Days(i64),
+    Between { from: i64, to: Option<i64> },
+}
+
+impl Span {
+    /// What a request asks for with `days`, or with `from` and maybe `to`,
+    /// at the time `now`. Without any of them it is the last day. Refused
+    /// with what to tell whoever asked: a span that ends before it starts,
+    /// that is longer than a trail can be, or that starts before the hub's
+    /// points do.
+    pub(crate) fn of(
+        days: Option<i64>,
+        from: Option<i64>,
+        to: Option<i64>,
+        now: i64,
+    ) -> Result<Span, String> {
+        let Some(from) = from else {
+            return match to {
+                Some(_) => Err("give from with to".to_owned()),
+                None => Ok(Span::Days(days.unwrap_or(1).clamp(1, MAX_TRAIL_DAYS))),
+            };
+        };
+        let end = to.unwrap_or(now);
+        if end <= from {
+            return Err("the span ends before it starts".to_owned());
+        }
+        if end - from > MAX_TRAIL_DAYS * 86400 {
+            return Err(format!("a span is {} days at most", MAX_TRAIL_DAYS));
+        }
+        if from < now - OLDEST_SPAN_DAYS * 86400 {
+            return Err(format!(
+                "a span starts {} days ago at most",
+                OLDEST_SPAN_DAYS
+            ));
+        }
+        Ok(Span::Between { from, to })
+    }
+
+    /// Where the span starts, asked at `now`.
+    pub(crate) fn start(&self, now: DateTime<Utc>) -> DateTime<Utc> {
+        match self {
+            Span::Days(days) => now - ChronoDuration::days(*days),
+            Span::Between { from, .. } => DateTime::from_timestamp(*from, 0).unwrap_or(now),
+        }
+    }
+
+    /// Where the span ends, when it doesn't run until now.
+    pub(crate) fn end(&self) -> Option<DateTime<Utc>> {
+        match self {
+            Span::Between { to: Some(to), .. } => DateTime::from_timestamp(*to, 0),
+            _ => None,
+        }
+    }
+
+    /// The span in a cache key: nothing in it changes with the time of asking.
+    pub(crate) fn key(&self) -> String {
+        match self {
+            Span::Days(days) => days.to_string(),
+            Span::Between { from, to: Some(to) } => format!("{from}-{to}"),
+            Span::Between { from, to: None } => format!("{from}-"),
+        }
+    }
+
+    /// The span as the answer names it.
+    pub(crate) fn json(&self) -> Value {
+        match self {
+            Span::Days(days) => serde_json::json!({ "days": days }),
+            Span::Between { from, to } => serde_json::json!({ "from": from, "to": to }),
+        }
+    }
+}
+
+/// Up to when the older part of a trail is read at `now`: a quarter of an
+/// hour ago (see `SETTLE_SECS`), or where the span ends when that is earlier.
+/// Never before the span starts: then there is no older part.
+fn older_until(span: Span, now: DateTime<Utc>) -> DateTime<Utc> {
+    let settled = now - ChronoDuration::seconds(SETTLE_SECS);
+    span.end()
+        .map_or(settled, |end| end.min(settled))
+        .max(span.start(now))
+}
+
+/// What the hub is asked for the recent part: everything from where the
+/// older part ends, up to the end of the span when it has one. A span that
+/// is long over gets nothing new, but the answer still says whether the trail
+/// may be read at all.
+fn recent_query(id: &str, older: &OlderTrail, span: Span) -> Vec<(&'static str, String)> {
+    let from = hub_time(older.last_at.unwrap_or(older.until));
+    let mut query = vec![("accounts", id.to_owned()), ("from", from)];
+    if let Some(end) = span.end() {
+        query.push(("to", hub_time(end)));
+    }
+    query
 }
 
 /// The older part of a trail as it is kept in the cache: already thinned, so
@@ -527,14 +634,17 @@ fn only_account(answer: HubLocationsMulti) -> Result<HubAccountLocations, HubErr
 /// Reads the older part of an account's trail from the hub: page by page
 /// backwards, with `to` set to the first point of the page before, until the
 /// hub says nothing was left out.
-async fn fetch_older(context: &HubContext, id: &str, days: i64) -> Result<Value, HubError> {
+async fn fetch_older(context: &HubContext, id: &str, span: Span) -> Result<Value, HubError> {
     let now = Utc::now();
-    let until = now - ChronoDuration::seconds(SETTLE_SECS);
-    let from = hub_time(now - ChronoDuration::days(days));
+    let start = span.start(now);
+    let until = older_until(span, now);
+    let from = hub_time(start);
     let mut pages = Vec::new();
     let mut truncated = false;
     let mut to = until;
-    for _ in 0..MAX_TRAIL_PAGES {
+    // A session that began within the last quarter of an hour has no older part.
+    let pages_to_read = if until > start { MAX_TRAIL_PAGES } else { 0 };
+    for _ in 0..pages_to_read {
         let query = [
             ("accounts", id.to_owned()),
             ("from", from.clone()),
@@ -562,17 +672,18 @@ async fn fetch_older(context: &HubContext, id: &str, days: i64) -> Result<Value,
     .map_err(|err| HubError::Other(format!("thinning a trail failed: {err}")))?
 }
 
-/// An account's trail over the last `days`, and how long ago its recent part
-/// came from the hub. None when the key can't read the account's trail.
+/// An account's trail over a span, and how long ago its recent part came
+/// from the hub. None when the key can't read the account's trail.
 async fn account_trail(
     context: &HubContext,
     id: &str,
-    days: i64,
+    span: Span,
 ) -> Result<Option<(BuiltTrail, Duration)>, HubError> {
+    let key = span.key();
     let older = context
         .cache
-        .get_or_fetch(&format!("trail-older:{}:{}", days, id), OLDER_TTL, || {
-            fetch_older(context, id, days)
+        .get_or_fetch(&format!("trail-older:{}:{}", key, id), OLDER_TTL, || {
+            fetch_older(context, id, span)
         })
         .await;
     let older: OlderTrail = match older {
@@ -581,11 +692,10 @@ async fn account_trail(
         Err(err) => return Err(err),
     };
     // Asked for every minute, so a trail made private is gone within one.
-    let from = hub_time(older.last_at.unwrap_or(older.until));
-    let query = [("accounts", id.to_owned()), ("from", from)];
+    let query = recent_query(id, &older, span);
     let recent = context
         .cache
-        .get_or_fetch_dated(&format!("trail-recent:{}:{}", days, id), RECENT_TTL, || {
+        .get_or_fetch_dated(&format!("trail-recent:{}:{}", key, id), RECENT_TTL, || {
             fetch_json(&context.client, "/locations", &query)
         })
         .await;
@@ -606,7 +716,8 @@ pub async fn get_trails(
     context: web::Data<HubContext>,
 ) -> Result<HttpResponse, HistoryError> {
     history_enabled(&config)?;
-    let days = query.days.unwrap_or(1).clamp(1, MAX_TRAIL_DAYS);
+    let span = Span::of(query.days, query.from, query.to, Utc::now().timestamp())
+        .map_err(HistoryError::BadRequest)?;
     let members = list_param(query.members.as_deref());
     if members.is_empty() || members.len() > MAX_TRAILS {
         return Err(HistoryError::BadRequest(format!(
@@ -617,7 +728,7 @@ pub async fn get_trails(
     let context: &HubContext = &context;
     let answers = join_all(members.iter().map(|member| async move {
         match context.directory.hub_id(member) {
-            Some(id) => account_trail(context, &id, days).await,
+            Some(id) => account_trail(context, &id, span).await,
             None => Ok(None),
         }
     }))
@@ -635,12 +746,11 @@ pub async fn get_trails(
     }
     // `as_of` is when the hub last answered: older than a minute means the
     // hub is unreachable and this is the cache's stale copy.
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "v": 3,
-        "days": days,
-        "as_of": Utc::now().timestamp() - oldest.as_secs() as i64,
-        "trails": trails,
-    })))
+    let mut answer = span.json();
+    answer["v"] = serde_json::json!(3);
+    answer["as_of"] = serde_json::json!(Utc::now().timestamp() - oldest.as_secs() as i64);
+    answer["trails"] = Value::Array(trails);
+    Ok(HttpResponse::Ok().json(answer))
 }
 
 #[cfg(test)]
@@ -1433,6 +1543,128 @@ mod tests {
         assert_eq!(stays, [(3200, 10, 10), (3201, 20, 80), (2900, 81, 81)]);
         assert!(built.points[2].jump);
         assert_eq!((built.step, built.truncated), (60, false));
+    }
+
+    const NOW: i64 = TRAIL_START + 40 * 86400;
+
+    fn at(seconds: i64) -> DateTime<Utc> {
+        DateTime::from_timestamp(seconds, 0).unwrap()
+    }
+
+    #[test]
+    fn a_trail_is_asked_for_in_days_or_from_one_moment_to_another() {
+        // Nothing asked for is the last day; days stay within a week.
+        assert_eq!(Span::of(None, None, None, NOW), Ok(Span::Days(1)));
+        assert_eq!(Span::of(Some(7), None, None, NOW), Ok(Span::Days(7)));
+        assert_eq!(Span::of(Some(30), None, None, NOW), Ok(Span::Days(7)));
+        assert_eq!(Span::of(Some(0), None, None, NOW), Ok(Span::Days(1)));
+        // A session that is over, and one that is still going on.
+        let (from, to) = (NOW - 7200, NOW - 3600);
+        assert_eq!(
+            Span::of(None, Some(from), Some(to), NOW),
+            Ok(Span::Between { from, to: Some(to) })
+        );
+        assert_eq!(
+            Span::of(Some(7), Some(from), None, NOW),
+            Ok(Span::Between { from, to: None })
+        );
+    }
+
+    #[test]
+    fn a_span_that_makes_no_trail_is_refused() {
+        let refused = |from, to| Span::of(None, from, to, NOW).is_err();
+        // An end without a start, an end before the start, a start still to come.
+        assert!(refused(None, Some(NOW)));
+        assert!(refused(Some(NOW - 60), Some(NOW - 120)));
+        assert!(refused(Some(NOW + 60), None));
+        // Longer than a trail can be, over or not.
+        assert!(refused(Some(NOW - 8 * 86400), Some(NOW - 60)));
+        assert!(refused(Some(NOW - 8 * 86400), None));
+        assert!(!refused(Some(NOW - 7 * 86400), None));
+        // From before the hub keeps points.
+        assert!(refused(Some(NOW - 31 * 86400), Some(NOW - 30 * 86400)));
+        assert!(!refused(Some(NOW - 30 * 86400), Some(NOW - 29 * 86400)));
+    }
+
+    #[test]
+    fn a_span_names_its_cache_entries_by_what_does_not_change() {
+        assert_eq!(Span::Days(7).key(), "7");
+        let over = Span::Between {
+            from: NOW - 7200,
+            to: Some(NOW - 3600),
+        };
+        let going_on = Span::Between {
+            from: NOW - 7200,
+            to: None,
+        };
+        assert_eq!(over.key(), format!("{}-{}", NOW - 7200, NOW - 3600));
+        assert_eq!(going_on.key(), format!("{}-", NOW - 7200));
+        assert_ne!(over.key(), going_on.key());
+    }
+
+    #[test]
+    fn the_older_part_of_a_span_ends_where_the_span_does_or_a_quarter_of_an_hour_ago() {
+        let now = at(NOW);
+        let settled = at(NOW - SETTLE_SECS);
+        assert_eq!(older_until(Span::Days(1), now), settled);
+        // A session that is long over is all older part.
+        let over = Span::Between {
+            from: NOW - 7200,
+            to: Some(NOW - 3600),
+        };
+        assert_eq!(older_until(over, now), at(NOW - 3600));
+        // One that ended five minutes ago can still get points.
+        let just_over = Span::Between {
+            from: NOW - 7200,
+            to: Some(NOW - 300),
+        };
+        assert_eq!(older_until(just_over, now), settled);
+        // One that began five minutes ago has no older part.
+        let just_begun = Span::Between {
+            from: NOW - 300,
+            to: None,
+        };
+        assert_eq!(older_until(just_begun, now), at(NOW - 300));
+    }
+
+    #[test]
+    fn the_recent_part_of_a_span_is_asked_for_up_to_its_end() {
+        let first = [
+            tick(10, 3200, 3200, HubVia::Move),
+            tick(20, 3201, 3200, HubVia::Move),
+        ];
+        let asked = |span| {
+            let query = recent_query("abc", &older(&first), span);
+            let get = |name| {
+                query
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| value.clone())
+            };
+            (get("accounts"), get("from"), get("to"))
+        };
+        let last = hub_time(first[1].at);
+        // Until now: from the older part's last point on, as before.
+        assert_eq!(
+            asked(Span::Days(1)),
+            (Some("abc".to_owned()), Some(last.clone()), None)
+        );
+        // A session that is over: no further than its end.
+        let over = Span::Between {
+            from: TRAIL_START,
+            to: Some(TRAIL_START + 600),
+        };
+        assert_eq!(
+            asked(over),
+            (
+                Some("abc".to_owned()),
+                Some(last),
+                Some(hub_time(at(TRAIL_START + 600)))
+            )
+        );
+        // Without a point in the older part: from where that part ended.
+        let empty = recent_query("abc", &older(&[]), Span::Days(1));
+        assert_eq!(empty[1].1, hub_time(at(TRAIL_START + 100)));
     }
 
     #[test]
