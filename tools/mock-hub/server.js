@@ -216,6 +216,48 @@ function level(xp) {
 
 const shares = (account, category) => account.categories.includes(category);
 
+const session = (id, start, end, worlds) => ({
+  id,
+  started_at: new Date(start).toISOString(),
+  ended_at: end === null ? null : new Date(end).toISOString(),
+  last_seen_at: new Date(end ?? Date.now()).toISOString(),
+  duration_ms: (end ?? Date.now()) - start,
+  worlds,
+  end_reason: end === null ? null : "logout",
+});
+
+// The routed account's sessions since `from`, newest first: one for every lap
+// of its route, from the lap's start to its logout, so a session is exactly
+// what its trail shows. They go back as far as its trail does.
+function routeSessions(from) {
+  const lapMs = ROUTE_MINUTES * 60_000;
+  const now = Date.now();
+  const first = Math.max(from, now - TRAIL_HOURS * 3600_000);
+  const sessions = [];
+  for (let lap = Math.floor(now / lapMs); (lap + 1) * lapMs > first; lap--) {
+    const start = lap * lapMs;
+    const logout = start + ROUTE_LOGOUT_MINUTE * 60_000;
+    sessions.push(session(`route-${lap}`, start, logout > now ? null : logout, [302, 330]));
+  }
+  return sessions;
+}
+
+// Any other account's sessions since `from`, newest first: one on most days,
+// at an hour of its own, the same however often they are asked for.
+function sessions(account, from) {
+  const now = Date.now();
+  const sessions = [];
+  for (let day = Math.floor(now / 86400_000); (day + 1) * 86400_000 > from; day--) {
+    if ((day + account.phase) % 3 === 2) continue;
+    const start = day * 86400_000 + (2 + (account.phase % 5)) * 3600_000;
+    const end = start + (40 + ((day * 37 + account.phase * 11) % 200)) * 60_000;
+    if (start > now || end < from) continue;
+    const open = end > now && account.online;
+    sessions.push(session(`day-${account.id}-${day}`, start, open ? null : Math.min(end, now), [302 + (account.phase % 40), 330 + (day % 10)]));
+  }
+  return sessions;
+}
+
 function lastSeen(account, online) {
   if (online) return new Date();
   if (account.routed) {
@@ -744,23 +786,7 @@ const server = http.createServer((req, res) => {
     }
     if (sub === "/sessions") {
       const from = fromParam(url, 30);
-      const sessions = [];
-      for (let day = 0; day * 86400_000 < Date.now() - from; day++) {
-        if ((day + account.phase) % 3 === 2) continue;
-        const start = Date.now() - day * 86400_000 - (2 + (account.phase % 5)) * 3600_000;
-        const duration = (40 + ((day * 37 + account.phase * 11) % 200)) * 60_000;
-        const open = day === 0 && account.online;
-        sessions.push({
-          id: crypto.randomUUID(),
-          started_at: new Date(start).toISOString(),
-          ended_at: open ? null : new Date(start + duration).toISOString(),
-          last_seen_at: new Date(open ? Date.now() : start + duration).toISOString(),
-          duration_ms: open ? Date.now() - start : duration,
-          worlds: [302 + (account.phase % 40), 330 + (day % 10)],
-          end_reason: open ? null : "logout",
-        });
-      }
-      return ok(res, { ...base, sessions });
+      return ok(res, { ...base, sessions: account.routed ? routeSessions(from) : sessions(account, from) });
     }
     if (sub === "/wealth") {
       if (!shares(account, "inventory")) return notFound(res);
@@ -825,18 +851,19 @@ const server = http.createServer((req, res) => {
         (!ids.length || ids.includes(e.account.id)) &&
         (minValue === null || (e.value_gp ?? -1) >= Number(minValue))
     );
-    // With from: the events that occurred since then, newest first, paged on
-    // (occurred_at, seq) until next_cursor is null (hub D-98). The hub also
-    // takes `to`; the map never sends it.
+    // With from: the events that occurred since then (up to `to`, when a
+    // session's events are asked for), newest first, paged on (occurred_at,
+    // seq) until next_cursor is null (hub D-98).
     const from = url.searchParams.get("from");
     if (EVENTS_RANGE && from !== null) {
       const after = cursor === null ? null : parseRangeCursor(cursor);
       if (cursor !== null && !after) return invalid(res, "cursor is not a cursor of a time range");
       const start = Date.parse(from);
       if (Number.isNaN(start)) return invalid(res, "from is not a time");
+      const end = Date.parse(url.searchParams.get("to") || "") || Infinity;
       const at = (e) => Date.parse(e.occurred_at);
       const older = matching
-        .filter((e) => at(e) >= start)
+        .filter((e) => at(e) >= start && at(e) <= end)
         .filter((e) => !after || at(e) < after.at || (at(e) === after.at && e.seq < after.seq))
         .sort((a, b) => at(b) - at(a) || b.seq - a.seq);
       const range = older.slice(0, limit);
