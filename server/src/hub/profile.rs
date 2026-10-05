@@ -11,6 +11,7 @@ use crate::hub::fetch::{cached, history_enabled, parse, HistoryError, Period};
 use crate::hub::models::{
     HubAccountGains, HubEquipmentHistory, HubEvent, HubItems, HubSessions, HubWealth,
 };
+use crate::hub::trails::MAX_TRAIL_DAYS;
 use crate::hub::HubContext;
 use actix_web::{get, web, HttpResponse};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
@@ -28,8 +29,6 @@ const EVENTS_TTL: Duration = Duration::from_secs(30);
 /// The events along a trail. The site asks for them once per trail and again
 /// every ten minutes; what happens in between reaches it with the live feed.
 const RANGE_EVENTS_TTL: Duration = Duration::from_secs(120);
-/// The longest trail there is, in days.
-const RANGE_MAX_DAYS: i64 = 30;
 /// Events per hub page (the hub's maximum), and how many are read for one
 /// trail at most: of drops, and of everything else.
 const RANGE_PAGE: usize = 500;
@@ -339,7 +338,7 @@ fn events_json<'a>(events: impl Iterator<Item = &'a HubEvent>, context: &HubCont
 
 /// The member's events of the last `days` (default 1), newest first, for
 /// their trail: every kind the map shows, drops only from `min_loot` gp. Drops
-/// are read apart from the rest, so that a month of small ones doesn't crowd
+/// are read apart from the rest, so that a week of small ones doesn't crowd
 /// out the levels and deaths.
 #[get("/hub/players/{member}/trail-events")]
 pub async fn get_player_trail_events(
@@ -351,7 +350,7 @@ pub async fn get_player_trail_events(
 ) -> Result<HttpResponse, HistoryError> {
     history_enabled(&config)?;
     let hub_id = hub_id(&context, &path)?;
-    let days = clamp_days(query.days, 1, RANGE_MAX_DAYS);
+    let days = clamp_days(query.days, 1, MAX_TRAIL_DAYS);
     let min_loot = query.min_loot.unwrap_or(0).max(0);
     let key = format!("/events?accounts={hub_id}&days={days}&min_loot={min_loot}");
     let from = from_days(days);
@@ -412,6 +411,8 @@ mod tests {
         assert_eq!(clamp_days(None, 7, 30), 7);
         assert_eq!(clamp_days(Some(500), 7, 30), 30);
         assert_eq!(clamp_days(Some(0), 7, 30), 1);
+        // The events along a trail go no further back than a trail does.
+        assert_eq!(clamp_days(Some(30), 1, MAX_TRAIL_DAYS), 7);
     }
 
     const RANGE_CURSOR: &str = "cjE6MTc5MDY5MDI4MjUxMToxNw";
