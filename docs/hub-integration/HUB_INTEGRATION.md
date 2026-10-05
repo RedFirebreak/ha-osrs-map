@@ -55,7 +55,7 @@ left out, so the backend reads a trail in two parts (`server/src/hub/trails.rs`)
 - The older part, up to 15 minutes ago: pages of 20,000 backwards, with `to` set to the first
   point's `at`, until `truncated` is false or ten pages were read (some 33 hours of running; what
   lies before is left out and the trail says "since ..."). Read once every 10 minutes per player and
-  length, and kept thinned.
+  length, and kept thinned, with what each stay that is left weighs (see below).
 - The recent part, from the older part's last point on: one request, every minute. A late message
   can add points up to 15 minutes back, which is why the older part ends there.
 
@@ -64,10 +64,38 @@ trail private is a 404 on the next read, and their trail is gone within a minute
 
 **Labels and thinning.** A label belongs to two points as the hub returned them, so it is read
 before anything is removed. Consecutive points on one tile become a stay, which keeps the label of
-its first point. A trail of more than 3000 stays is thinned to the first one of every so many
-seconds, keeping both points of every step that isn't a `move`, and of every boat and world change;
-between two points that are kept, only moves were left out. Points without a label fall back to the
-old rule (another part of the map, more than five minutes, or further than a run).
+its first point. A trail of more than 3000 stays, or whose older part has more than 2700, is
+thinned without moving its line. A stay is left out when the straight line between the stays kept
+around it has the player within a tile of it at that time, at an even pace: the tiles of a
+straight run go, a corner stays, and so does a tile the player stood on for a while. When that
+isn't enough the smallest corners go too, up to 4 tiles off the line, and after that only the time
+allowed between two points grows, from a minute up to six hours. Both points of every step that
+isn't a `move`, and of every boat, world and floor change, are always kept; between two points
+that are kept, only moves were left out. A trail that still has too many stays is cut short and
+says so (`truncated`): the map shows the newest part with the way that was walked and
+"since ...", not straight lines from one teleport to the next. Points without a label fall back
+to the old rule (another part of the map, more than five minutes, or further than a run).
+
+Every stay is weighed once, against the stays the hub gave. The older part is cached with the
+weights of what is left of it; when the recent part is added only the new stays are weighed, and
+both are cut at one level, never a finer one than the older part's. The older part is cut to 2700
+points, so that the recent part seldom is what pushes the trail to a coarser level.
+
+`step` is the longest time between two points of a thinned trail with no break between them, and
+60 when nothing was thinned. On a busy trail it stays near a minute; where a player kept to one
+small patch for hours it is those hours. The site takes it for how far apart two points of one
+walk can be (`gapS`), and goes by the kind of step, not by the time, for what the replay skips.
+The answer doesn't say how far off the line may be: up to 4 tiles whenever the trail was thinned.
+
+What fits. A hub that has a point per game tick has 100 a minute for a player who runs, so the
+trail of an active player is thinned, the one of 24 hours too. What can't go is a corner more than
+4 tiles off and both ends of a break, so how far back 3000 points reach depends on the play:
+running without a stop with a corner every few seconds, some four hours (a test pins that); play
+with stops and straight stretches, a day or more (an estimate from made-up play, not measured on
+real trails). One point a minute (a plugin from before 1.6) is thinned the same way: a point more
+than 4 tiles off the line between its neighbours is a corner that stays, the rest loses time. A
+week of straight legs fits (a test pins that); a week round the clock that turns every minute is
+all corners and is cut short, where the old thinning showed the whole week at a coarser step.
 
 **To the site.** A point is `[x, y, plane, unix seconds, dwell, flags, via]` with `via` 1 move, 2
 entrance, 3 house, 4 teleport, 5 gap and 0 (left out) when the hub didn't say. The response has

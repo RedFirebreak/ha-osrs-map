@@ -37,7 +37,7 @@ site keep running, so each needs its own terminal or has to be started in the ba
 2. **Mock hub** (keeps running)
 
    ```bash
-   MOCK_HUB_TRAIL_HOURS=720 node tools/mock-hub/server.js
+   MOCK_HUB_TRAIL_HOURS=168 node tools/mock-hub/server.js
    ```
 
 3. **Backend** (keeps running). Build it, then start the binary **from an empty directory**: started
@@ -83,7 +83,7 @@ the real one.
   equipment and trail private.
 - **Positions**: each account circles one place (Lumbridge, Varrock, Zulrah, ...) every 7 minutes.
   The position is a function of the clock, so a trail is computed when asked for, back to
-  `MOCK_HUB_TRAIL_HOURS` (default 6; 720 is 30 days, enough to need pages and thinning). A trail is
+  `MOCK_HUB_TRAIL_HOURS` (default 6; 168 is 7 days, enough to need pages and thinning). A trail is
   what the hub gives: a point for every game tick on which the tile changed and one a minute while
   standing still, each with `via` (how the player got there), 20,000 points to an answer and
   `truncated` when there are more. `MOCK_HUB_TRAIL=minute` gives what a hub from before that did: a
