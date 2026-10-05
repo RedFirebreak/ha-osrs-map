@@ -665,8 +665,9 @@ export class CanvasMap extends BaseElement {
 
   /**
    * Shows a player's trail, as served by /api/hub/trails (one entry of
-   * `trails`). `style` is `{color, light, windowS}`: the player's colours and
-   * how far back the trail was asked for, in seconds.
+   * `trails`). `style` is `{color, light, windowS, until}`: the player's
+   * colours, how long a time the trail was asked for in seconds, and when
+   * that time ended when it wasn't now (see TrailLayer.setHistory).
    */
   setTrail(name, trail, style) {
     this.trailLayer.setHistory(name, trail, style);

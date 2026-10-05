@@ -55,6 +55,22 @@ describe("hub features", () => {
     ]);
   });
 
+  it("asks for a trail and its events from one moment to another", async () => {
+    globalThis.fetch.mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue([]) });
+
+    await api.getTrails(["Zezima"], { from: 1790000000, to: 1790003600 });
+    await api.getTrails(["Zezima"], { from: 1790000000, to: null });
+    await api.getTrailEvents("Zezima", { from: 1790000000, to: 1790003600 }, 0);
+    await api.getTrailEvents("Zezima", { from: 1790000000, to: null }, 100000);
+
+    expect(globalThis.fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/api/hub/trails?members=Zezima&from=1790000000&to=1790003600",
+      "/api/hub/trails?members=Zezima&from=1790000000",
+      "/api/hub/players/Zezima/trail-events?from=1790000000&to=1790003600&min_loot=0",
+      "/api/hub/players/Zezima/trail-events?from=1790000000&min_loot=100000",
+    ]);
+  });
+
   it("rejects with the status when the hub endpoint fails", async () => {
     globalThis.fetch.mockResolvedValue({ ok: false, status: 404 });
     await expect(api.getHubGains("day")).rejects.toMatchObject({ status: 404 });

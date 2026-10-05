@@ -45,8 +45,10 @@ export function ageFraction(t, nowS, windowS) {
   return 1 - Math.log(1 + age / AGE_SCALE_S) / Math.log(1 + windowS / AGE_SCALE_S);
 }
 
+// A trail that ended before now (`mode.endS`) is as old as it was then:
+// measured from now, a session of last night would be faint from end to end.
 function ageBand(t, view, mode) {
-  return Math.min(AGE_BANDS - 1, Math.floor(ageFraction(t, view.nowS, mode.windowS) * AGE_BANDS));
+  return Math.min(AGE_BANDS - 1, Math.floor(ageFraction(t, mode.endS ?? view.nowS, mode.windowS) * AGE_BANDS));
 }
 
 /** The alpha and width (screen pixels) of the ribbon for an age band. */

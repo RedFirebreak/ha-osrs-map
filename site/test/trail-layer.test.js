@@ -57,6 +57,37 @@ describe("TrailLayer", () => {
     expect(points[points.length - 1]).toMatchObject({ x: 3235 });
   });
 
+  describe("with a trail that ended before now (a session that is over)", () => {
+    const over = { ...COLORS, windowS: 180, until: T + 180 };
+
+    it("leaves the trail where it ended, wherever the player is now", () => {
+      layer.observe("Alice", tile(3500), true);
+      layer.setHistory("Alice", history(), over);
+      const ended = layer.modelOf("Alice").points;
+      expect(ended).toHaveLength(3);
+      expect(ended[2]).toMatchObject({ x: 3220, t1: T + 120 });
+      // Nor does it grow when they move on.
+      now = T + 200;
+      expect(layer.observe("Alice", tile(3510), true)).toBe(false);
+      expect(layer.modelOf("Alice").points).toHaveLength(3);
+    });
+
+    it("has a timeline that ends with the trail", () => {
+      layer.observe("Alice", tile(3500), true);
+      layer.setHistory("Alice", history(), over);
+      now = T + 5000;
+      expect(layer.timeline()).toMatchObject({ tMin: T, tMax: T + 120 });
+    });
+
+    it("grows again when the trail is asked for until now", () => {
+      layer.observe("Alice", tile(3500), true);
+      layer.setHistory("Alice", history(), over);
+      layer.setHistory("Alice", history(), COLORS);
+      const points = layer.modelOf("Alice").points;
+      expect(points[points.length - 1]).toMatchObject({ x: 3500, live: true });
+    });
+  });
+
   it("does not report a change for a player whose trail isn't shown", () => {
     expect(layer.observe("Bob", tile(3000), true)).toBe(false);
     expect(layer.names()).toEqual([]);
