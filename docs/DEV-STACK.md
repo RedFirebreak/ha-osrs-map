@@ -104,6 +104,10 @@ the real one.
   | 33.5-35 | Teleport to Varrock                                                  |
   | 35-40   | Logged out: a gap in the trail                                       |
 
+  Every lap is one play session, from minute 0 to the logout at 35, for as far back as the trail
+  goes: pick one in the trail length menu and the map shows exactly one lap. The lap that is going
+  on is "Now, since ...".
+
 - **Events**: one for a random online account every `MOCK_HUB_EVENT_MS` (default 4000): loot 45 %
   (one in twelve worth 10M or more), level-up 25 %, death 8 %, PK loot 5 %, collection log 5 %, diary
   4 %, combat task 4 %, superior spawn 4 %. At start it also adds 80 random events spread over the
@@ -111,7 +115,8 @@ the real one.
   say where they happened. `/events` also reads a time range (`from`), as the hub does;
   `MOCK_HUB_EVENTS_RANGE=off` makes it ignore that, like a hub from before it.
 - **Skills, XP series, sessions, wealth, equipment**: formulas over the account's number, the same
-  on every request.
+  on every request. Every other account has one session on two days out of three, at an hour of its
+  own.
 - **People**: three Discord accounts, `100000000000000001` (Mock Admin), `…002` (Mock Member) and
   `…003` (Mock Stranger). `/members/{discord_id}` says the first two are members and the first an
   admin, as the hub's does; `MOCK_HUB_MEMBERS=off` leaves the endpoint out, like a hub from before
