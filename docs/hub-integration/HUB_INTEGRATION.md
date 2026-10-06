@@ -185,5 +185,6 @@ out stays where they were last seen.
 | `GET /members/{discord_id}`: whether a Discord account is a member and an admin | D-100 | osrs-data-hub PR #46 |
 | A trail point per game tick, 20,000 to an answer, `truncated` | D-102 | osrs-data-hub PR #48 |
 | `via` on every trail point: how the player got there | D-103 | osrs-data-hub PR #49 |
+| `instance` as a `via`: a walk into the next room of a raid | D-103 | osrs-data-hub PR #53 |
 
 Push to keys (webhooks or a key-authenticated stream) was deferred (D-93); polling stays the contract.

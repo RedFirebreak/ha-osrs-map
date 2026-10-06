@@ -67,7 +67,7 @@ A profile tab or trail says "not shared" when the player keeps that data private
 
 Every player on the map comes from an osrs-data-hub. The backend mirrors the hub's accounts; players only
 pair the RuneLite plugin with the hub. (Earlier versions could also pair the plugin with the map directly;
-that is gone, and old direct pairings now get a 404.)
+that is gone. An old direct pairing now gets a 401, which makes the plugin switch that connection off.)
 
 ### How the hub integration works
 
@@ -148,9 +148,11 @@ so with one nobody can log in.
 5. Log in as a hub admin and open **Admin → Test connection** to check the key and see how many accounts
    it can read.
 
-**Players choose what the map sees.** On the hub, equipment and inventory are private until their owner
-shares them with the guild, and live location is shared with the guild by default. A player whose items
-don't show up on the map should share them in the hub's sharing settings.
+**Players choose what the map sees.** On the hub everything the plugin sends is shared with the guild by
+default, and an account's owner can make each part private: stats, events, activity, live location, the
+location trail, equipment and inventory. An account the hub knew before it shared a part by default keeps
+that part private until its owner shares it. A player whose position, trail or items don't show up on the
+map should look at the hub's sharing settings.
 
 ## Running it
 

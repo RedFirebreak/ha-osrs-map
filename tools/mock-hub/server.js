@@ -5,8 +5,9 @@
 //
 // MOCK_HUB_ACCOUNTS=60 sets the number of accounts (default 12). They walk
 // around well-known places; about 70 % are online. Every fourth account keeps
-// its inventory, equipment and location history private, like a player who
-// never changed the hub's defaults, so its history endpoints answer 404.
+// its inventory, equipment and location history private, like an account from
+// before the hub shared those by default (its D-96) whose owner never changed
+// that, so its history endpoints answer 404.
 //
 // Serves what the map's backend asks the hub for, following the hub's
 // docs/API.md as of D-103: /me, /snapshot (ETag/If-None-Match, with

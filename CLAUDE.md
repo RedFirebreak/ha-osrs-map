@@ -39,6 +39,7 @@ rule each from the plugin to this map. Before calling a change done, run what fo
 | Login, sessions, the admin gate (`discord_routes.rs`, `auth_*.rs`, `hub/members.rs`) | `chain auth`, with `up map` and with `up full` | Admin, member and stranger get what they should; with a real hub, someone it has never seen is turned away |
 | The roster, online and offline | `chain presence` (needs `up full`) | A client that stops without a logout goes offline here about a minute later |
 | How a player's position, or any other category, is taken over from the hub | `chain privacy` (needs `up full`) | A location made private in the hub is dropped here, and where the player goes meanwhile never shows |
+| Trails: what the hub's labels become, thinning, the time a trail is asked for (`server/src/hub/trails.rs`, `site/src/canvas-map/trail-*.js`) | `up full`, then `smoke`, `chain trail` and `chain delivery` | The map passes on the hub's label for every step of a journey, a trail too long to pass on whole keeps the way that was walked, and a walk whose messages came late, combined or twice is one walk here too |
 | The site only | `restart map`, then look at http://localhost:4100/guild | |
 
 `node ../osrs-dev-stack/stack.mjs smoke` and `… chain <name>` print `PASS` or `FAIL` per step and exit
