@@ -13,6 +13,7 @@ import {
 } from "../data/event-view";
 import { clockTime, shortDay } from "../data/format";
 import { remember, remembered } from "../data/storage";
+import { sessionOptions, spanKey, spanWindow } from "./trail-sessions";
 // The page drives these two from the moment it is connected, so they have to
 // be defined before it is.
 import "../canvas-map/canvas-map";
@@ -25,6 +26,10 @@ const TRAIL_RETRY_MS = 5000;
 // Hub data older than this is the server's stale copy: the hub isn't answering.
 const TRAIL_STALE_S = 180;
 const TRAIL_DAYS_KEY = "map-trail-days";
+// The sessions offered as the time of the trails: how far back they go, and
+// how long a player's are taken as known. One that goes on ends some time.
+const SESSIONS_DAYS = 7;
+const SESSIONS_REFRESH_MS = 60000;
 // A player's events over the length of their trail, to mark on it. What
 // happened doesn't change, and what happens next comes with the live feed, so
 // they are only asked for again now and then.
@@ -50,10 +55,10 @@ function trailStart(trail) {
   return Date.now() - start < TRAIL_START_TIME_MS ? `${day} ${clockTime(start)}` : day;
 }
 
-/** The trail length chosen last time, when the select still offers it. */
+/** The trail length chosen last time, when the select still offers it; else its first. */
 function storedTrailDays(select) {
   const stored = String(remembered(TRAIL_DAYS_KEY));
-  return [...select.options].some((option) => option.value === stored) ? stored : select.value;
+  return [...select.options].some((option) => option.value === stored) ? stored : select.options[0].value;
 }
 
 export class MapPage extends BaseElement {
@@ -63,6 +68,12 @@ export class MapPage extends BaseElement {
     this.trailData = new Map();
     this.trailEvents = new Map();
     this.liveEvents = [];
+    // The sessions in the menu (see sessionOptions), whose they are and when
+    // they were asked for; and the one that was picked, with its player.
+    this.sessionChoices = [];
+    this.sessionsOf = null;
+    this.sessionsAt = 0;
+    this.pickedSession = null;
   }
 
   html() {
@@ -114,6 +125,7 @@ export class MapPage extends BaseElement {
     this.liveEventsBringNews = newsTracker();
     this.subscribe("live-events", this.handleLiveEvents.bind(this));
     this.subscribe("player-selected", () => document.body.classList.remove("roster-open"));
+    this.subscribe("player-selected", () => this.loadSessions());
   }
 
   disconnectedCallback() {
@@ -167,8 +179,98 @@ export class MapPage extends BaseElement {
   // ---------------------------------------------------------------------------
 
   handleTrailDaysChange() {
-    remember(TRAIL_DAYS_KEY, this.trailDaysSelect.value);
+    const session = this.sessionChoices.find((choice) => choice.value === this.trailDaysSelect.value);
+    if (session) {
+      // Not remembered for the next visit: by then it is one session of many.
+      this.pickedSession = { member: this.sessionsOf, ...session };
+    } else {
+      this.pickedSession = null;
+      remember(TRAIL_DAYS_KEY, this.trailDaysSelect.value);
+    }
     this.loadTrails();
+  }
+
+  /**
+   * The time the trails are asked for: the session that was picked (`{from,
+   * to}`, for every trail shown), else the number of days in the menu.
+   */
+  trailSpan() {
+    if (this.pickedSession) return { from: this.pickedSession.from, to: this.pickedSession.to };
+    return parseInt(this.trailDaysSelect.value, 10);
+  }
+
+  /** Back to the length the menu remembers: the session that was picked is no more. */
+  dropSession() {
+    this.pickedSession = null;
+    this.trailDaysSelect.value = storedTrailDays(this.trailDaysSelect);
+  }
+
+  /**
+   * Whose sessions the menu offers: the player the replay watches (the
+   * selected one when their trail is on, else the first), or whoever the
+   * session that was picked belongs to.
+   */
+  sessionOwner() {
+    const names = [...selection.trails];
+    if (this.pickedSession && names.includes(this.pickedSession.member)) return this.pickedSession.member;
+    return names.includes(selection.selected) ? selection.selected : names[0] || null;
+  }
+
+  /**
+   * Brings the sessions in the menu up to date, and with them the session
+   * that was picked: it may have ended meanwhile, or be too long ago by now.
+   */
+  async loadSessions() {
+    const owner = this.historyEnabled === false ? null : this.sessionOwner();
+    if (!owner) {
+      this.sessionsRequestId = (this.sessionsRequestId || 0) + 1;
+      this.showSessions(null, []);
+      return;
+    }
+    if (owner === this.sessionsOf && Date.now() - this.sessionsAt < SESSIONS_REFRESH_MS) return;
+    const requestId = (this.sessionsRequestId = (this.sessionsRequestId || 0) + 1);
+    let choices = [];
+    try {
+      choices = sessionOptions((await api.getPlayerSessions(owner, SESSIONS_DAYS)).sessions);
+    } catch (error) {
+      // Not shared is an answer: no sessions to offer. Anything else (the hub
+      // is busy) leaves the ones that are there until the next time.
+      if (error.status !== 404 && owner === this.sessionsOf) return;
+    }
+    if (!this.isConnected || requestId !== this.sessionsRequestId) return;
+    this.sessionsAt = Date.now();
+    const picked = this.pickedSession;
+    const now = picked && picked.member === owner ? choices.find((choice) => choice.start === picked.start) : null;
+    if (picked && picked.member === owner && !now) {
+      this.showSessions(owner, choices);
+      this.dropSession();
+      this.loadTrails();
+    } else if (now && now.to !== picked.to) {
+      this.pickedSession = { member: owner, ...now };
+      this.showSessions(owner, choices);
+      this.loadTrails();
+    } else {
+      this.showSessions(owner, choices);
+    }
+  }
+
+  /** Lists a player's sessions below the lengths in the menu, or none. */
+  showSessions(owner, choices) {
+    this.sessionsOf = owner;
+    this.sessionChoices = choices;
+    const select = this.trailDaysSelect;
+    const days = this.pickedSession ? null : select.value;
+    select.querySelector("optgroup")?.remove();
+    if (choices.length) {
+      const group = document.createElement("optgroup");
+      group.label = `Sessions of ${owner}`;
+      for (const choice of choices) group.appendChild(new Option(choice.label, choice.value));
+      select.appendChild(group);
+    }
+    const picked = this.pickedSession && choices.some((choice) => choice.value === this.pickedSession.value);
+    select.value = picked ? this.pickedSession.value : days || storedTrailDays(select);
+    // A value that is no longer in the menu: the remembered length it is.
+    if (!select.value) select.value = storedTrailDays(select);
   }
 
   handleReplayClick() {
@@ -193,6 +295,9 @@ export class MapPage extends BaseElement {
     window.clearTimeout(this.trailRefresh);
     const requestId = (this.trailRequestId = (this.trailRequestId || 0) + 1);
     const names = [...selection.trails];
+    // A session is its player's: with their trail taken off it is nobody's.
+    if (this.pickedSession && !selection.hasTrail(this.pickedSession.member)) this.dropSession();
+    this.loadSessions();
     // A trail that was switched off goes at once, whatever the request does.
     for (const name of this.worldMap.trailNames()) {
       if (!selection.hasTrail(name)) this.worldMap.clearTrail(name);
@@ -212,16 +317,17 @@ export class MapPage extends BaseElement {
     }
     this.renderTrailChips();
 
-    const days = parseInt(this.trailDaysSelect.value, 10);
+    const span = this.trailSpan();
     let retryIn = TRAIL_REFRESH_MS;
     try {
-      const data = await api.getTrails(names, days);
+      const data = await api.getTrails(names, span);
       if (!this.isConnected || requestId !== this.trailRequestId) return;
       this.trailData = new Map(data.trails.map((trail) => [trail.member, trail]));
+      const { windowS, until } = spanWindow(span, Math.floor(Date.now() / 1000));
       for (const trail of data.trails) {
         if (trail.shared) {
           const { color, light } = colorForName(trail.member);
-          this.worldMap.setTrail(trail.member, trail, { color, light, windowS: days * 86400 });
+          this.worldMap.setTrail(trail.member, trail, { color, light, windowS, until });
         } else {
           this.worldMap.clearTrail(trail.member);
         }
@@ -247,30 +353,31 @@ export class MapPage extends BaseElement {
    */
   async loadTrailEvents() {
     const now = Date.now();
-    const days = parseInt(this.trailDaysSelect.value, 10);
+    const span = this.trailSpan();
+    const key = spanKey(span);
     // The server leaves out the drops the map wouldn't show anyway.
     const minLoot = this.filters.minLoot || 0;
     const due = this.worldMap.trailNames().filter((name) => {
       const fetched = this.trailEvents.get(name);
       if (!fetched || now - fetched.at >= TRAIL_EVENTS_REFRESH_MS) return true;
-      // Another length of trail, or smaller drops than were asked for.
-      return fetched.days !== days || fetched.minLoot > minLoot;
+      // Another time of trail, or smaller drops than were asked for.
+      return fetched.span !== key || fetched.minLoot > minLoot;
     });
     if (!due.length) return;
     await Promise.all(
       due.map(async (name) => {
         // Noted before the answer, so a slow one isn't asked for twice.
         const known = this.trailEvents.get(name)?.events || [];
-        this.trailEvents.set(name, { events: known, at: now, days, minLoot });
+        this.trailEvents.set(name, { events: known, at: now, span: key, minLoot });
         try {
-          const events = await api.getTrailEvents(name, days, minLoot);
-          if (this.trailEvents.has(name)) this.trailEvents.set(name, { events, at: now, days, minLoot });
+          const events = await api.getTrailEvents(name, span, minLoot);
+          if (this.trailEvents.has(name)) this.trailEvents.set(name, { events, at: now, span: key, minLoot });
         } catch (error) {
           // The trail is shown with what the live feed has. Not shared is an
           // answer; anything else (the hub is busy) is asked again with the
           // next refresh of the trails.
           if (error.status !== 404 && this.trailEvents.has(name)) {
-            this.trailEvents.set(name, { events: known, at: 0, days, minLoot });
+            this.trailEvents.set(name, { events: known, at: 0, span: key, minLoot });
           }
         }
       }),

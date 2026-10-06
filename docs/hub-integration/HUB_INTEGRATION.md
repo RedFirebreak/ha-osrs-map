@@ -17,11 +17,11 @@ for local development.
 | `GET /leaderboards/loot` | Clan page "Biggest drops" (falls back to the event buffer on older hubs) | 1 min |
 | `GET /locations?accounts=&from=&to=` | Trails of up to 8 players, one account per request. See "Trails" below | 1 min and 10 min |
 | `GET /accounts/{id}/gains` | Profile → Gains | 2 min |
-| `GET /accounts/{id}/sessions` | Profile → Activity (play time) | 1 min |
+| `GET /accounts/{id}/sessions` | Profile → Activity (play time), and the sessions offered as the time of the trails (7 days; the site asks again every minute while a trail is on) | 1 min |
 | `GET /accounts/{id}/wealth` | Profile → Wealth | 5 min |
 | `GET /accounts/{id}/equipment-history` | Profile → Gear | 2 min |
 | `GET /events?accounts=` | Profile → Activity (a player's recent events) | 30 s |
-| `GET /events?accounts=&from=` | The events marked on a trail, over its length: pages of 500, newest first, until `next_cursor` is null or 2000 events. When the map leaves out small drops, drops (`types=loot,pk_loot&min_value=`, from the smallest drop the map shows) are read apart from the other kinds, so a trail costs 2 to 8 requests; with every drop shown it is one read of all kinds, 1 to 4 requests. The site asks once per trail and again every 10 min. A hub from before D-98 ignores `from` and hands back a feed cursor; the backend then keeps that one page | 2 min |
+| `GET /events?accounts=&from=&to=` | The events marked on a trail, over its length (`to` only for a session that is over): pages of 500, newest first, until `next_cursor` is null or 2000 events. When the map leaves out small drops, drops (`types=loot,pk_loot&min_value=`, from the smallest drop the map shows) are read apart from the other kinds, so a trail costs 2 to 8 requests; with every drop shown it is one read of all kinds, 1 to 4 requests. The site asks once per trail and again every 10 min. A hub from before D-98 ignores `from` and hands back a feed cursor; the backend then keeps that one page | 2 min |
 
 ## Snapshot fields
 
@@ -96,6 +96,25 @@ real trails). One point a minute (a plugin from before 1.6) is thinned the same 
 than 4 tiles off the line between its neighbours is a corner that stays, the rest loses time. A
 week of straight legs fits (a test pins that); a week round the clock that turns every minute is
 all corners and is cut short, where the old thinning showed the whole week at a coarser step.
+
+**A session.** A trail is asked for in days up to now (`/api/hub/trails?days=`, 1 to 7) or from
+one moment to another (`from=&to=`, unix seconds; `to` left out for a session that still goes on),
+and so are its events (`/api/hub/players/{name}/trail-events`). Refused with a 400: an end that
+isn't after the start, more than 7 days, a start more than 30 days ago, `to` without `from`. The
+answer names what was asked: `days`, or `from` and `to`. The site doesn't offer a session of 7
+days or more. The hub keeps a session open for as long as its client keeps sending, and the game
+logs a player out after 6 hours, so in practice that is a test client that never stops.
+
+Both kinds are read the same way. The older part ends 15 minutes ago or where the span ends,
+whichever is first, and the minute's read asks from there to the span's end. For a session that
+is long over that read has nothing new, but it is still what makes a trail that was made private
+disappear within a minute, without any page being read again. The cache goes by the span's own
+times and never by the time of asking, so everyone who looks at one session shares its entries.
+
+The hub dates a session by when it received a message and a point by the player's clock, so the
+site asks for a session with a minute to spare on both sides. Sessions are `activity` and a trail
+is `location_history`: a player who shares their trail but not their activity has no sessions to
+pick, and their trail is still there in days.
 
 **To the site.** A point is `[x, y, plane, unix seconds, dwell, flags, via]` with `via` 1 move, 2
 entrance, 3 house, 4 teleport, 5 gap and 0 (left out) when the hub didn't say. The response has
