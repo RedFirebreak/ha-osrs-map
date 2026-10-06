@@ -37,11 +37,12 @@ export class TrailLayer {
    * decodeTrail. `windowS` is how long a time the trail was asked for, and
    * `until` when that time ended (unix seconds) if it didn't run until now:
    * a play session that is over. Such a trail is what the hub has of it and
-   * no more; where the player is now is no part of it.
+   * no more; where the player is now is no part of it. A server that doesn't
+   * say when the hub gave the trail is taken to have asked now.
    */
   setHistory(name, raw, { color, light, windowS = DAY_S, until = null }) {
-    const { points, step } = decodeTrail(raw);
-    this.trails.set(name, { history: points, step, color, light, windowS, until });
+    const { points, step, asOf = this.now() } = decodeTrail(raw);
+    this.trails.set(name, { history: points, step, asOf, color, light, windowS, until });
     this.rebuild(name);
   }
 
@@ -154,7 +155,7 @@ export class TrailLayer {
     const trail = this.trails.get(name);
     const seen = trail.until === null ? this.seen.get(name) : null;
     const head = seen?.online && seen.position ? { ...seen.position, t: this.now() } : null;
-    const points = mergeTrail(trail.history, seen?.buffer || [], head);
+    const points = mergeTrail(trail.history, seen?.buffer || [], head, trail.asOf);
     trail.model = buildTrailModel(points, { step: trail.step });
     trail.geometries = [];
     trail.marks = null;

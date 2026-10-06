@@ -52,9 +52,19 @@ describe("TrailLayer", () => {
 
   it("remembers where a player was seen before their trail was switched on", () => {
     layer.observe("Alice", tile(3235), true);
-    layer.setHistory("Alice", history(), COLORS);
+    // The hub's answer is the one from before they got there.
+    layer.setHistory("Alice", { ...history(), as_of: T + 125 }, COLORS);
     const points = layer.modelOf("Alice").points;
     expect(points[points.length - 1]).toMatchObject({ x: 3235 });
+  });
+
+  it("leaves out where a player was seen before the hub gave their trail", () => {
+    layer.observe("Alice", tile(3215), true);
+    now = T + 135;
+    layer.observe("Alice", tile(3220), true);
+    // Given now, so with the tile the marker has just left in it.
+    layer.setHistory("Alice", history(), COLORS);
+    expect(layer.modelOf("Alice").points.map((point) => point.x)).toEqual([3200, 3210, 3220]);
   });
 
   describe("with a trail that ended before now (a session that is over)", () => {
@@ -95,6 +105,7 @@ describe("TrailLayer", () => {
 
   it("ends an offline player's trail where the hub last saw them", () => {
     layer.observe("Alice", tile(3235), true);
+    now = T + 135;
     layer.setHistory("Alice", history(), COLORS);
     expect(layer.observe("Alice", null, false)).toBe(true);
     const points = layer.modelOf("Alice").points;
@@ -128,11 +139,12 @@ describe("TrailLayer", () => {
       now = T + seconds;
       layer.observe("Alice", tile(x), true);
     }
-    layer.setHistory("Alice", history(), COLORS);
+    // The same answer again: the hub wasn't asked in between.
+    layer.setHistory("Alice", { ...history(), as_of: T + 130 }, COLORS);
     expect(layer.modelOf("Alice").points.map((point) => point.x)).toEqual([3200, 3210, 3220, 3230, 3240, 3250]);
 
     // The hub caught up with two of them: its samples replace the live ones.
-    layer.setHistory("Alice", history(5), COLORS);
+    layer.setHistory("Alice", { ...history(5), as_of: T + 300 }, COLORS);
     expect(layer.modelOf("Alice").points.map((point) => point.x)).toEqual([3200, 3210, 3220, 3230, 3240, 3250]);
     expect(layer.modelOf("Alice").points.filter((point) => point.live)).toHaveLength(1);
   });
