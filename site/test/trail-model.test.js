@@ -368,8 +368,55 @@ describe("mergeTrail", () => {
     expect(merged[1].t1).toBe(T + 9000);
   });
 
-  it("is only the live points when the hub has none yet", () => {
+  it("is only the live points when the hub has none yet, for a trail asked for in days", () => {
     expect(mergeTrail([], [live(3200, 3200, 10)], null, AS_OF)).toHaveLength(1);
+    expect(mergeTrail([], [live(3200, 3200, 10)], null, AS_OF, null)).toHaveLength(1);
+  });
+
+  describe("over a span that began at a moment (a play session that still goes on)", () => {
+    // Asked for from a minute in.
+    const FROM = T + 60;
+    const times = (points) => points.map((point) => [point.x, point.t0, point.t1]);
+
+    it("leaves out what was seen before the span began, also when the hub has nothing in it", () => {
+      // Seen an hour before, and half a minute before.
+      const seen = [live(3100, 3200, -3600), live(3200, 3200, 30)];
+      expect(mergeTrail([], seen, null, AS_OF, FROM)).toEqual([]);
+    });
+
+    it("keeps what was seen since, also when the hub has nothing in it", () => {
+      const seen = [live(3200, 3200, 30), live(3205, 3200, 70), live(3210, 3200, 100)];
+      expect(times(mergeTrail([], seen, null, AS_OF, FROM))).toEqual([
+        [3205, T + 70, T + 70],
+        [3210, T + 100, T + 100],
+      ]);
+    });
+
+    it("has a sighting that began before the span and lasted into it begin where the span does", () => {
+      const stood = { ...live(3200, 3200, 30), t1: T + 90 };
+      const merged = mergeTrail([], [live(3100, 3200, 10), stood, live(3210, 3200, 100)], null, AS_OF, FROM);
+      expect(times(merged)).toEqual([
+        [3200, FROM, T + 90],
+        [3210, T + 100, T + 100],
+      ]);
+      // The buffer itself is left as it was: another span may want all of it.
+      expect(stood.t0).toBe(T + 30);
+    });
+
+    it("still ends on the marker of a player who is online", () => {
+      const head = { x: 3230, y: 3201, plane: 0, boat: false, world: 302, t: T + 200 };
+      const merged = mergeTrail([], [live(3100, 3200, -3600)], head, AS_OF, FROM);
+      expect(times(merged)).toEqual([[3230, T + 200, T + 200]]);
+    });
+
+    it("changes nothing where the hub has points: what was seen before it answered is in them", () => {
+      const session = [at(3200, 3200, 1), at(3210, 3200, 1.5)];
+      const seen = [live(3100, 3200, -3600), live(3205, 3200, 70), live(3220, 3200, 130)];
+      expect(times(mergeTrail(session, seen, null, AS_OF, FROM))).toEqual(
+        times(mergeTrail(session, seen, null, AS_OF)),
+      );
+      expect(mergeTrail(session, seen, null, AS_OF, FROM).map((point) => point.x)).toEqual([3200, 3210, 3220]);
+    });
   });
 
   describe("with a marker that is behind the hub", () => {

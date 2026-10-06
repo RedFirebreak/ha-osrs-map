@@ -74,9 +74,10 @@ describe("a span of trail", () => {
     expect(spanKey({ from: 100, to: null })).toBe("100-");
   });
 
-  it("knows how long it is and whether it ends before now", () => {
-    expect(spanWindow(7, 1000)).toEqual({ windowS: 7 * 86400, until: null });
-    expect(spanWindow({ from: 100, to: 700 }, 1000)).toEqual({ windowS: 600, until: 700 });
-    expect(spanWindow({ from: 100, to: null }, 1000)).toEqual({ windowS: 900, until: null });
+  it("knows how long it is, whether it ends before now and when it began", () => {
+    // A number of days slides along with now: it has no moment at which it began.
+    expect(spanWindow(7, 1000)).toEqual({ windowS: 7 * 86400, until: null, from: null });
+    expect(spanWindow({ from: 100, to: 700 }, 1000)).toEqual({ windowS: 600, until: 700, from: 100 });
+    expect(spanWindow({ from: 100, to: null }, 1000)).toEqual({ windowS: 900, until: null, from: 100 });
   });
 });

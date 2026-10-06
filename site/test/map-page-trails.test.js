@@ -3,6 +3,7 @@ import { api } from "../src/data/api";
 import { pubsub } from "../src/data/pubsub";
 import { selection } from "../src/data/selection";
 import { colorForName } from "../src/data/player-colors";
+import { TrailLayer } from "../src/canvas-map/trail-layer";
 import "../src/map-page/map-page";
 
 const NOW_S = 1_790_000_000;
@@ -166,6 +167,7 @@ describe("map page trails", () => {
       light,
       windowS: 86400,
       until: null,
+      from: null,
     });
     expect(page.querySelector('[data-name="Bob"]').textContent).toContain("not shared");
   });
@@ -589,15 +591,56 @@ describe("map page trails", () => {
       expect(api.getTrailEvents).toHaveBeenLastCalledWith("Bob", span, 100000);
       // Drawn as a trail that ended then, as long as the session was.
       const style = worldMap.setTrail.mock.calls.at(-1)[2];
-      expect(style).toMatchObject({ windowS: END - START + 120, until: END + 60 });
+      expect(style).toMatchObject({ windowS: END - START + 120, until: END + 60, from: START - 60 });
     });
 
     it("shows a session that is still going on until now", async () => {
       await shown(["Alice"]);
       await pick(0);
       expect(api.getTrails).toHaveBeenLastCalledWith(["Alice"], { from: NOW_S - 1800 - 60, to: null });
+      // The map is told from when: the same moment the server was asked from.
       const style = worldMap.setTrail.mock.calls.at(-1)[2];
-      expect(style).toMatchObject({ windowS: 1860, until: null });
+      expect(style).toMatchObject({ windowS: 1860, until: null, from: NOW_S - 1800 - 60 });
+    });
+
+    it("draws nothing of what was seen of a player before a session that is still going on began", async () => {
+      // The map's own trails behind the stand-in for the map, on a clock of their own.
+      let seenAt = NOW_S - 7200;
+      const layer = new TrailLayer({ now: () => seenAt });
+      worldMap.setTrail = vi.fn((name, trail, style) => layer.setHistory(name, trail, style));
+      worldMap.clearTrail = vi.fn((name) => layer.remove(name));
+      worldMap.trailNames = () => layer.names();
+      // Bob walked about two hours ago, while this tab was open, and logged out.
+      for (const x of [3230, 3240, 3250]) {
+        layer.observe("Bob", { x, y: 3201, plane: 0 }, true);
+        seenAt += 60;
+      }
+      layer.observe("Bob", { x: 3250, y: 3201, plane: 0 }, false);
+      seenAt = NOW_S;
+
+      // Alice's session began half an hour ago; the hub has nothing of Bob in it.
+      api.getPlayerSessions.mockResolvedValue({ sessions: [open, over], total_ms: 0 });
+      vi.spyOn(api, "getTrails").mockImplementation(async (members) => ({
+        ...trailsResponse(members),
+        trails: members.map((member) => ({
+          member,
+          shared: true,
+          step: 60,
+          points: member === "Alice" ? [[3200, 3200, 0, NOW_S - 600]] : [],
+        })),
+      }));
+      mount();
+      selection.toggleTrail("Alice");
+      selection.toggleTrail("Bob");
+      await settle();
+      // Over 24 hours the sightings are Bob's trail, as before.
+      expect(layer.modelOf("Bob").points).toHaveLength(3);
+
+      await pick(0);
+      expect(page.querySelector('[data-name="Bob"]').textContent).toBe("Bob (no points)");
+      expect(layer.modelOf("Bob").points).toEqual([]);
+      // And the replay starts where the session's trail does.
+      expect(layer.timeline().tMin).toBe(NOW_S - 600);
     });
 
     it("does not remember a session as the length of the trails", async () => {

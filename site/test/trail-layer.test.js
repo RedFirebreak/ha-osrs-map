@@ -98,6 +98,66 @@ describe("TrailLayer", () => {
     });
   });
 
+  describe("with a trail over a session that still goes on", () => {
+    // The session began ten minutes after T; the map asked for it from there.
+    const FROM = T + 600;
+    const open = { ...COLORS, windowS: 300, until: null, from: FROM };
+    const nothing = { step: 60, points: [] };
+
+    /** Alice was seen walking east a few minutes before the session began. */
+    function seenBefore(online = false) {
+      for (const [seconds, x] of [
+        [200, 3230],
+        [260, 3240],
+        [320, 3250],
+      ]) {
+        now = T + seconds;
+        layer.observe("Alice", tile(x), true);
+      }
+      now = T + 380;
+      layer.observe("Alice", tile(3250), online);
+      now = T + 900;
+    }
+
+    it("shows nothing of a player the hub has no points of in it, wherever they were seen before", () => {
+      seenBefore();
+      layer.setHistory("Alice", nothing, open);
+      expect(layer.modelOf("Alice").points).toEqual([]);
+      // And the replay has nothing of theirs to start at.
+      expect(layer.timeline()).toEqual({ tMin: null, tMax: null, ticks: [] });
+    });
+
+    it("starts the replay where the session's own trail starts, not at an older sighting of someone else", () => {
+      seenBefore();
+      layer.setHistory("Alice", nothing, open);
+      layer.setHistory("Bob", { step: 60, points: [[3000, 3000, 0, FROM + 30]] }, open);
+      expect(layer.timeline()).toMatchObject({ tMin: FROM + 30, tMax: FROM + 30 });
+    });
+
+    it("has a player who stood there since before it began stand there from its start", () => {
+      seenBefore(true);
+      layer.observe("Alice", tile(3250), true);
+      layer.setHistory("Alice", nothing, open);
+      expect(layer.modelOf("Alice").points.map((point) => [point.x, point.t0, point.t1])).toEqual([
+        [3250, FROM, T + 900],
+      ]);
+    });
+
+    it("still grows with where the player goes", () => {
+      seenBefore();
+      layer.setHistory("Alice", nothing, open);
+      now = T + 960;
+      expect(layer.observe("Alice", tile(3300), true)).toBe(true);
+      expect(layer.modelOf("Alice").points.map((point) => [point.x, point.t0])).toEqual([[3300, T + 960]]);
+    });
+
+    it("is what it was for a trail asked for in days", () => {
+      seenBefore();
+      layer.setHistory("Alice", nothing, COLORS);
+      expect(layer.modelOf("Alice").points.map((point) => point.x)).toEqual([3230, 3240, 3250]);
+    });
+  });
+
   it("does not report a change for a player whose trail isn't shown", () => {
     expect(layer.observe("Bob", tile(3000), true)).toBe(false);
     expect(layer.names()).toEqual([]);

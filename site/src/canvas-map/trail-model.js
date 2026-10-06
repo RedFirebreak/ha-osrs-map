@@ -268,8 +268,14 @@ export function observeLive(
  * player is online) is the last point, so the trail ends on the marker. Only
  * a marker that is itself behind the history is left out: the hub has the
  * player further on, and the marker follows within seconds.
+ *
+ * `from` is when the span of the trail began, when it was asked for from a
+ * moment (a play session that still goes on) and not in days. What was seen
+ * before then is no part of it, also when the hub has no point in the span:
+ * the live points go back as far as the tab has been open. A sighting that
+ * lasted into the span begins where the span does.
  */
-export function mergeTrail(history, live, head, asOf) {
+export function mergeTrail(history, live, head, asOf, from = null) {
   const merged = history.slice();
   const newest = history[history.length - 1];
   const samePlace = (a, b) => sameTile(a, b) && a.boat === b.boat;
@@ -285,7 +291,9 @@ export function mergeTrail(history, live, head, asOf) {
     }
   };
   const isNews = (point) => !newest || point.t0 >= asOf;
-  for (const point of live) {
+  for (const seen of live) {
+    if (from !== null && seen.t1 < from) continue;
+    const point = from !== null && seen.t0 < from ? { ...seen, t0: from } : seen;
     if (isNews(point)) append(point);
   }
   if (head) {

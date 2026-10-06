@@ -58,9 +58,10 @@ export function spanKey(span) {
 
 /**
  * How a trail over a span is drawn: `windowS`, how long the span is at
- * `nowS`, and `until`, when it ended (null: it runs until now).
+ * `nowS`; `until`, when it ended (null: it runs until now); and `from`, when
+ * it began (null for a number of days, which slides along with now).
  */
 export function spanWindow(span, nowS) {
-  if (typeof span === "number") return { windowS: span * 86400, until: null };
-  return { windowS: (span.to ?? nowS) - span.from, until: span.to ?? null };
+  if (typeof span === "number") return { windowS: span * 86400, until: null, from: null };
+  return { windowS: (span.to ?? nowS) - span.from, until: span.to ?? null, from: span.from };
 }

@@ -323,11 +323,11 @@ export class MapPage extends BaseElement {
       const data = await api.getTrails(names, span);
       if (!this.isConnected || requestId !== this.trailRequestId) return;
       this.trailData = new Map(data.trails.map((trail) => [trail.member, trail]));
-      const { windowS, until } = spanWindow(span, Math.floor(Date.now() / 1000));
+      const { windowS, until, from } = spanWindow(span, Math.floor(Date.now() / 1000));
       for (const trail of data.trails) {
         if (trail.shared) {
           const { color, light } = colorForName(trail.member);
-          this.worldMap.setTrail(trail.member, trail, { color, light, windowS, until });
+          this.worldMap.setTrail(trail.member, trail, { color, light, windowS, until, from });
         } else {
           this.worldMap.clearTrail(trail.member);
         }
