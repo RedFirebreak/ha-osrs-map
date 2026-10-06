@@ -195,6 +195,24 @@ describe("map page trails", () => {
     expect(page.querySelector('[data-name="Bob"]').textContent).toBe("Bob");
   });
 
+  it("says the time of day too when that trail starts within the last two days", async () => {
+    const response = trailsResponse(["Alice"]);
+    response.trails[0].truncated = true;
+    // On the tile from 26 to 25 hours ago: the trail starts when they got there.
+    response.trails[0].points = [
+      [3200, 3200, 0, NOW_S - 25 * 3600, 3600],
+      [3201, 3200, 0, NOW_S - 60],
+    ];
+    vi.spyOn(api, "getTrails").mockResolvedValue(response);
+    mount();
+    selection.toggleTrail("Alice");
+    await settle();
+    const start = new Date((NOW_S - 26 * 3600) * 1000);
+    const day = start.toLocaleDateString([], { day: "numeric", month: "short" });
+    const time = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    expect(page.querySelector('[data-name="Alice"]').textContent).toBe(`Alice (since ${day} ${time})`);
+  });
+
   describe("events", () => {
     const event = (id, member, secondsAgo, extra = {}) => ({
       id,
@@ -259,11 +277,11 @@ describe("map page trails", () => {
       selection.toggleTrail("Alice");
       await settle();
       const select = page.querySelector(".map-page__trail-days");
-      select.value = "30";
+      select.value = "7";
       select.dispatchEvent(new Event("change"));
       await settle();
       expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
-      expect(api.getTrailEvents).toHaveBeenLastCalledWith("Alice", 30, 100000);
+      expect(api.getTrailEvents).toHaveBeenLastCalledWith("Alice", 7, 100000);
     });
 
     it("are asked for again when smaller drops are to be shown, not when only bigger ones are", async () => {
@@ -474,7 +492,7 @@ describe("map page trails", () => {
       speed.value = "120";
       speed.dispatchEvent(new Event("change", { bubbles: true }));
       const select = page.querySelector(".map-page__trail-days");
-      select.value = "30";
+      select.value = "7";
       select.dispatchEvent(new Event("change"));
       await settle();
       expect(scrubber().clock.speed).toBe(120);
@@ -486,6 +504,47 @@ describe("map page trails", () => {
       page.remove();
       expect(worldMap.setReplayTime).toHaveBeenLastCalledWith(null);
     });
+  });
+
+  it("draws the line for that at two days", async () => {
+    const chip = async (hoursAgo) => {
+      const response = trailsResponse(["Alice"]);
+      response.trails[0].truncated = true;
+      response.trails[0].points = [
+        [3200, 3200, 0, NOW_S - hoursAgo * 3600],
+        [3201, 3200, 0, NOW_S - 60],
+      ];
+      vi.spyOn(api, "getTrails").mockResolvedValue(response);
+      mount();
+      selection.toggleTrail("Alice");
+      await settle();
+      const text = page.querySelector('[data-name="Alice"]').textContent;
+      page.remove();
+      selection.reset();
+      return text;
+    };
+    const start = (hoursAgo) => new Date((NOW_S - hoursAgo * 3600) * 1000);
+    const day = (date) => date.toLocaleDateString([], { day: "numeric", month: "short" });
+    const time = (date) => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    expect(await chip(47)).toBe(`Alice (since ${day(start(47))} ${time(start(47))})`);
+    expect(await chip(49)).toBe(`Alice (since ${day(start(49))})`);
+  });
+
+  it("offers 24 hours and 7 days", () => {
+    mount();
+    const select = page.querySelector(".map-page__trail-days");
+    expect([...select.options].map((option) => option.value)).toEqual(["1", "7"]);
+    expect(select.value).toBe("1");
+  });
+
+  it("goes back to 24 hours when the length it remembers is no longer offered", async () => {
+    localStorage.setItem("map-trail-days", JSON.stringify("30"));
+    vi.spyOn(api, "getTrails").mockResolvedValue(trailsResponse(["Alice"]));
+    mount();
+    selection.toggleTrail("Alice");
+    await settle();
+    expect(page.querySelector(".map-page__trail-days").value).toBe("1");
+    expect(api.getTrails).toHaveBeenLastCalledWith(["Alice"], 1);
   });
 
   it("remembers the trail length", async () => {

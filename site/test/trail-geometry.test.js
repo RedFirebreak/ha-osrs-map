@@ -75,6 +75,17 @@ describe("smoothRun", () => {
     }
   });
 
+  it("keeps a long straight stretch straight, whatever the turn at its end", () => {
+    // What a thinned trail has of a run round a corner: both ends and the corner.
+    const corner = [at(3200, 3200, 0), at(3260, 3200, 1), at(3260, 3170, 2)];
+    const run = smoothRun(corner, 0, 2, 0, false);
+    const [x, y] = tileCenter(3260, 3200);
+    for (const [vx, vy] of vertices(run)) {
+      // Never a tile (4 px) off the two legs, which are the tiles that were walked.
+      expect(Math.min(Math.abs(vx - x), Math.abs(vy - y))).toBeLessThanOrEqual(4);
+    }
+  });
+
   it("holds still for as long as the player stayed on a tile", () => {
     const points = [at(3200, 3200, 0), { ...at(3210, 3200, 1), t1: T + 600 }, at(3220, 3200, 11)];
     const run = smoothRun(points, 0, 2, 0, false);

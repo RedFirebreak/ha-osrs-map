@@ -29,8 +29,14 @@ const SETTLE_SECS: i64 = 15 * 60;
 /// 33 hours of running without a stop.
 const MAX_TRAIL_PAGES: usize = 10;
 const MAX_TRAIL_POINTS: usize = 3000;
+/// What the older part of a trail is cut to. The rest is for the recent part,
+/// so that it seldom is what pushes the whole trail to a coarser level.
+const OLDER_MAX_POINTS: usize = MAX_TRAIL_POINTS - 300;
 /// Trails requested at once; more lines than this are unreadable anyway.
 pub(crate) const MAX_TRAILS: usize = 8;
+/// The longest trail there is, in days. What fits of a busy player's trail is
+/// far less than a week of play, so further back there is nothing to show.
+pub(crate) const MAX_TRAIL_DAYS: i64 = 7;
 
 /// A player standing still keeps one point a minute, so the points of a trail
 /// that wasn't thinned are never further apart than this without a gap.
@@ -39,10 +45,31 @@ const TRAIL_IDLE_SECS: i64 = 60;
 const TRAIL_GAP_SECS: i64 = 300;
 /// Running covers two tiles per 0.6 s game tick.
 const RUN_TILES_PER_SEC: f64 = 2.0 / 0.6;
-/// The strides (in seconds) tried in turn when a trail has too many points.
-const THIN_STRIDES_SECS: [i64; 17] = [
-    2, 5, 10, 20, 30, 60, 120, 180, 300, 600, 900, 1200, 1800, 3600, 7200, 10800, 21600,
+/// What a trail with too many points may lose, tried in turn: how far (in
+/// tiles) its line may pass from a tile that was left out, and how long (in
+/// seconds) it may take from one point to the next. The way goes first, as
+/// far as cutting a corner still stays on the path; after that only the time.
+const THIN_LEVELS: [(f64, i64); 10] = [
+    (1.0, 60),
+    (2.0, 60),
+    (3.0, 60),
+    (4.0, 60),
+    (4.0, 120),
+    (4.0, 300),
+    (4.0, 600),
+    (4.0, 1800),
+    (4.0, 3600),
+    (4.0, 21600),
 ];
+/// The weight of a point that is kept at every level.
+const ALWAYS: usize = THIN_LEVELS.len();
+/// A walk of more points than this is weighed in halves, each with its own
+/// ends: weighing takes a look at every point of a part for each point it
+/// keeps, which on hours without a break could run to minutes.
+const MAX_WEIGHED_POINTS: usize = 2048;
+/// The hub's times are read to the second and a game tick is 0.6 s, so when a
+/// player was on a tile is known to within this.
+const TIME_SLACK_SECS: i64 = 1;
 const FLAG_BOAT: i64 = 1;
 
 /// A stay on one tile, from the hub's `first` sample there to the `last` (unix seconds).
@@ -64,9 +91,10 @@ pub(crate) struct TrailPoint {
     pub jump: bool,
 }
 
-/// A trail ready to send: `step` is the longest time between two points that
-/// isn't a gap (a minute when nothing was thinned, else the thinning stride);
-/// `truncated` when the trail was too long and its oldest points were dropped.
+/// A trail ready to send: `step` is the longest time between two points with
+/// no break between them (a minute when nothing was thinned, else what
+/// thinning left, see `Weighed::built`); `truncated` when the trail was too
+/// long and its oldest points were dropped.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct BuiltTrail {
     pub points: Vec<TrailPoint>,
@@ -156,66 +184,197 @@ fn is_break(a: &TrailPoint, b: &TrailPoint) -> bool {
     }
 }
 
-/// Thins a long trail to at most `max_points`: the first point of every
-/// `step` seconds (on a fixed grid, so the result barely changes as the window
-/// slides), plus the ends of the trail and both sides of every break.
-pub(crate) fn thin_trail(points: Vec<TrailPoint>, max_points: usize) -> BuiltTrail {
-    if points.len() <= max_points || max_points < 2 {
-        return BuiltTrail {
+/// How far (in tiles) a trail is off for the stay `p` when it goes straight
+/// from `a` to `b`: from `p` to where on that line the player would be while
+/// they were on `p`, at an even pace. So a corner counts, and so does a tile
+/// on the line that the player stood on for a while.
+fn off_the_line(a: &TrailPoint, b: &TrailPoint, p: &TrailPoint) -> f64 {
+    let (dx, dy) = ((b.x - a.x) as f64, (b.y - a.y) as f64);
+    let (px, py) = ((p.x - a.x) as f64, (p.y - a.y) as f64);
+    let length = dx * dx + dy * dy;
+    let nearest = if length > 0.0 {
+        (px * dx + py * dy) / length
+    } else {
+        0.0
+    };
+    let span = (b.first - a.last) as f64;
+    let reached = |time: i64| ((time - a.last) as f64 / span).clamp(0.0, 1.0);
+    let off_at = |time: i64| {
+        let (from, to) = if span > 0.0 {
+            (
+                reached(time - TIME_SLACK_SECS),
+                reached(time + TIME_SLACK_SECS),
+            )
+        } else {
+            (0.0, 1.0)
+        };
+        let along = nearest.clamp(from, to);
+        (px - dx * along).hypot(py - dy * along)
+    };
+    off_at(p.first).max(off_at(p.last))
+}
+
+/// Weighs the points between `from` and `to`, which are kept and have only
+/// moves between them: `weights[i]` becomes the number of levels of
+/// `THIN_LEVELS` at which point i is still needed. Without the points that
+/// aren't needed at a level, the line passes within that level's tiles of each
+/// of them (see `off_the_line`) and no two points left are further apart in
+/// time than its seconds. Points that the finest level can do without keep
+/// their weight of 0.
+fn weigh_walk(points: &[TrailPoint], from: usize, to: usize, weights: &mut [usize]) {
+    let mut parts = vec![(from, to, ALWAYS)];
+    while let Some((a, b, limit)) = parts.pop() {
+        if b - a < 2 {
+            continue;
+        }
+        if b - a > MAX_WEIGHED_POINTS {
+            let middle = a + (b - a) / 2;
+            weights[middle] = limit;
+            parts.push((a, middle, limit));
+            parts.push((middle, b, limit));
+            continue;
+        }
+        let (mut furthest, mut off) = (a + 1, 0.0);
+        for i in a + 1..b {
+            let distance = off_the_line(&points[a], &points[b], &points[i]);
+            if distance > off {
+                (furthest, off) = (i, distance);
+            }
+        }
+        let long = points[b].first - points[a].last;
+        let for_the_way = THIN_LEVELS.iter().filter(|level| off > level.0).count();
+        let for_the_time = THIN_LEVELS.iter().filter(|level| long > level.1).count();
+        // Never more than the point this part was split off at, so that what
+        // is kept at one level is kept at every finer one.
+        let weight = for_the_way.max(for_the_time).min(limit);
+        if weight == 0 {
+            continue;
+        }
+        let split = if for_the_way >= for_the_time {
+            furthest
+        } else {
+            // Nothing is far off, it only took long: the point halfway in time.
+            let halfway = points[a].last + long / 2;
+            (a + 1 + points[a + 1..b].partition_point(|point| point.first < halfway)).min(b - 1)
+        };
+        weights[split] = weight;
+        parts.push((a, split, weight));
+        parts.push((split, b, weight));
+    }
+}
+
+/// Weighs the points of a trail from `from` on (see `weigh_walk`): the first
+/// point, or the last one of a part that was weighed before, which then stays
+/// an end. The ends of the trail, both sides of every break and both sides of
+/// every change of floor are needed at every level. The points between two of
+/// those are weighed on their own, so what is kept of them doesn't change as
+/// the window slides.
+fn weigh(points: &[TrailPoint], from: usize, weights: &mut Vec<usize>) {
+    weights.resize(points.len(), 0);
+    let Some(last) = points.len().checked_sub(1) else {
+        return;
+    };
+    weights[from] = ALWAYS;
+    weights[last] = ALWAYS;
+    let mut start = from;
+    for to in from + 1..=last {
+        if points[to].jump || points[to].plane != points[to - 1].plane {
+            weights[to - 1] = ALWAYS;
+            weights[to] = ALWAYS;
+            weigh_walk(points, start, to - 1, weights);
+            start = to;
+        } else if to == last {
+            weigh_walk(points, start, to, weights);
+        }
+    }
+}
+
+/// The stays of a trail that are kept, each with its weight (see `weigh`).
+/// `level` is the level of `THIN_LEVELS` the others were left out at, None
+/// when none were; `truncated` when even the last level left too many and the
+/// oldest were dropped.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Weighed {
+    points: Vec<TrailPoint>,
+    weights: Vec<usize>,
+    level: Option<usize>,
+    truncated: bool,
+}
+
+impl Weighed {
+    /// The trail as it is sent. `step` is the longest time between two of its
+    /// points with no break between them, when anything was left out: a stay
+    /// is one point, and how long a break took says nothing about a walk.
+    fn built(self) -> BuiltTrail {
+        let step = match self.level {
+            None => TRAIL_IDLE_SECS,
+            Some(_) => self
+                .points
+                .windows(2)
+                .filter(|pair| !pair[1].jump)
+                .map(|pair| pair[1].first - pair[0].last)
+                .fold(TRAIL_IDLE_SECS, i64::max),
+        };
+        BuiltTrail {
+            points: self.points,
+            step,
+            truncated: self.truncated,
+        }
+    }
+}
+
+/// Cuts a weighed trail to at most `max_points` without moving its line: the
+/// points left out are the ones the line passes closest to anyway (the tiles
+/// of a straight run first, then the smallest corners). It takes the first
+/// level from `at_least` on that leaves no more than fit; a trail that fits
+/// as it is, with no level asked for, keeps every point.
+fn cut(
+    points: Vec<TrailPoint>,
+    weights: Vec<usize>,
+    at_least: Option<usize>,
+    max_points: usize,
+) -> Weighed {
+    if at_least.is_none() && (points.len() <= max_points || max_points < 2) {
+        return Weighed {
             points,
-            step: TRAIL_IDLE_SECS,
+            weights,
+            level: None,
             truncated: false,
         };
     }
-    let mut protected = vec![false; points.len()];
-    protected[0] = true;
-    protected[points.len() - 1] = true;
-    for i in 1..points.len() {
-        if points[i].jump {
-            protected[i - 1] = true;
-            protected[i] = true;
-        }
-    }
-
-    let mut keep = Vec::new();
-    let mut kept = 0;
-    let mut step = TRAIL_IDLE_SECS;
-    for stride in THIN_STRIDES_SECS {
-        step = stride.max(TRAIL_IDLE_SECS);
-        let mut bucket = None;
-        keep = points
-            .iter()
-            .zip(&protected)
-            .map(|(point, protected)| {
-                let first_of_bucket = bucket.replace(point.first.div_euclid(stride))
-                    != Some(point.first.div_euclid(stride));
-                *protected || first_of_bucket
-            })
-            .collect();
-        kept = keep.iter().filter(|keep| **keep).count();
-        if kept <= max_points {
-            break;
-        }
-    }
-
-    let truncated = kept > max_points;
+    let kept_at = |level: usize| weights.iter().filter(|weight| **weight > level).count();
+    // A trail that doesn't fit at the last level either is cut short: with
+    // straight lines from break to break it would show more days and no way.
+    let last = THIN_LEVELS.len() - 1;
+    let level = (at_least.unwrap_or(0)..=last)
+        .find(|level| kept_at(*level) <= max_points)
+        .unwrap_or(last);
+    let kept = kept_at(level);
     let mut drop = kept.saturating_sub(max_points);
-    let points = points
+    let (points, weights) = points
         .into_iter()
-        .zip(keep)
-        .filter(|(_, keep)| *keep)
-        .map(|(point, _)| point)
+        .zip(weights)
+        .filter(|(_, weight)| *weight > level)
         .skip_while(|_| {
             let dropping = drop > 0;
             drop = drop.saturating_sub(1);
             dropping
         })
-        .collect();
-    BuiltTrail {
+        .unzip();
+    Weighed {
         points,
-        step,
-        truncated,
+        weights,
+        level: Some(level),
+        truncated: kept > max_points,
     }
+}
+
+/// A trail thinned in one go, as its older part is when it is read.
+#[cfg(test)]
+pub(crate) fn thin_trail(points: Vec<TrailPoint>, max_points: usize) -> BuiltTrail {
+    let mut weights = Vec::new();
+    weigh(&points, 0, &mut weights);
+    cut(points, weights, None, max_points).built()
 }
 
 /// The label of a point as the site gets it; 0 when the hub didn't say, or
@@ -283,14 +442,15 @@ pub(crate) struct TrailsQuery {
 }
 
 /// The older part of a trail as it is kept in the cache: already thinned, so
-/// that a month of ticks isn't held in memory.
+/// that a week of ticks isn't held in memory, and with the weights of what is
+/// left, so that nothing of it is weighed again when the recent part is added.
 #[derive(Serialize, Deserialize)]
 struct OlderTrail {
     /// The hub was asked for the points up to this time.
     until: DateTime<Utc>,
     /// The time of the last of them, where the recent part takes over.
     last_at: Option<DateTime<Utc>>,
-    trail: BuiltTrail,
+    trail: Weighed,
 }
 
 /// The stays of a trail read in pages, the newest page first, as the hub
@@ -306,18 +466,54 @@ fn join_pages(pages: &[Vec<HubLocationPoint>]) -> Vec<TrailPoint> {
     stays
 }
 
+/// The older part of a trail from its pages (see `join_pages`), read up to
+/// `until`. `cut_short` when the hub had more than was read.
+fn older_part(
+    pages: &[Vec<HubLocationPoint>],
+    until: DateTime<Utc>,
+    cut_short: bool,
+) -> OlderTrail {
+    let last_at = pages
+        .first()
+        .and_then(|page| page.last())
+        .map(|point| point.at);
+    let points = join_pages(pages);
+    let mut weights = Vec::new();
+    weigh(&points, 0, &mut weights);
+    let mut trail = cut(points, weights, None, OLDER_MAX_POINTS);
+    trail.truncated |= cut_short;
+    OlderTrail {
+        until,
+        last_at,
+        trail,
+    }
+}
+
 /// The older part followed by what the hub has had since. `recent` was asked
 /// for from the older part's last point on, so it starts with that point (or
 /// with more that the older part already has, when it comes from the cache).
-fn join_recent(older: OlderTrail, recent: &[HubLocationPoint]) -> BuiltTrail {
+///
+/// Only what is new is weighed. The older part has its weights from when
+/// every one of its stays was still there; weighing what is left of it again
+/// would count as near the line what is only near a line that was itself
+/// drawn within the tolerance. Its last point stays an end for that reason,
+/// and the two parts are cut at one level, never a finer one than the older
+/// part's, so the trail doesn't change its level with every minute.
+fn join_recent(older: OlderTrail, recent: &[HubLocationPoint]) -> Weighed {
     let from = older.last_at.unwrap_or(older.until);
     let known = recent.partition_point(|point| point.at <= from);
-    let mut stays = older.trail.points;
-    extend_stays(&mut stays, &recent[known..]);
-    let mut built = thin_trail(stays, MAX_TRAIL_POINTS);
-    built.step = built.step.max(older.trail.step);
-    built.truncated |= older.trail.truncated;
-    built
+    let Weighed {
+        mut points,
+        mut weights,
+        level,
+        truncated,
+    } = older.trail;
+    let end = points.len().saturating_sub(1);
+    extend_stays(&mut points, &recent[known..]);
+    weigh(&points, end, &mut weights);
+    let mut joined = cut(points, weights, level, MAX_TRAIL_POINTS);
+    joined.truncated |= truncated;
+    joined
 }
 
 fn hub_time(time: DateTime<Utc>) -> String {
@@ -357,18 +553,13 @@ async fn fetch_older(context: &HubContext, id: &str, days: i64) -> Result<Value,
             _ => break,
         }
     }
-    let last_at = pages
-        .first()
-        .and_then(|page| page.last())
-        .map(|point| point.at);
-    let mut trail = thin_trail(join_pages(&pages), MAX_TRAIL_POINTS);
-    trail.truncated |= truncated;
-    serde_json::to_value(OlderTrail {
-        until,
-        last_at,
-        trail,
+    // Weighing a long trail takes a while: not on a thread that serves requests.
+    tokio::task::spawn_blocking(move || {
+        serde_json::to_value(older_part(&pages, until, truncated))
+            .map_err(|err| HubError::Other(err.to_string()))
     })
-    .map_err(|err| HubError::Other(err.to_string()))
+    .await
+    .map_err(|err| HubError::Other(format!("thinning a trail failed: {err}")))?
 }
 
 /// An account's trail over the last `days`, and how long ago its recent part
@@ -404,7 +595,7 @@ async fn account_trail(
         Err(err) => return Err(err),
     };
     let recent = only_account(parse(&recent)?)?;
-    Ok(Some((join_recent(older, &recent.points), age)))
+    Ok(Some((join_recent(older, &recent.points).built(), age)))
 }
 
 #[get("/hub/trails")]
@@ -415,7 +606,7 @@ pub async fn get_trails(
     context: web::Data<HubContext>,
 ) -> Result<HttpResponse, HistoryError> {
     history_enabled(&config)?;
-    let days = query.days.unwrap_or(1).clamp(1, 30);
+    let days = query.days.unwrap_or(1).clamp(1, MAX_TRAIL_DAYS);
     let members = list_param(query.members.as_deref());
     if members.is_empty() || members.len() > MAX_TRAILS {
         return Err(HistoryError::BadRequest(format!(
@@ -493,6 +684,470 @@ mod tests {
         minutes
             .map(|i| sample(i, 3000 + (i % 100) as i32, 3200 + (i / 100) as i32))
             .collect()
+    }
+
+    /// A route as the hub has it for a player on the move: a point for every
+    /// game tick (0.6 s, which the map reads to the second) on which the tile
+    /// changed.
+    struct Route {
+        points: Vec<HubLocationPoint>,
+        ticks: i64,
+        x: i32,
+        y: i32,
+    }
+
+    impl Route {
+        fn from(x: i32, y: i32) -> Self {
+            let mut route = Route {
+                points: Vec::new(),
+                ticks: 0,
+                x,
+                y,
+            };
+            route.arrive(HubVia::Move);
+            route
+        }
+
+        fn arrive(&mut self, via: HubVia) {
+            self.points
+                .push(tick(self.ticks * 6 / 10, self.x, self.y, via));
+        }
+
+        fn teleport(&mut self, x: i32, y: i32) {
+            self.ticks += 1;
+            (self.x, self.y) = (x, y);
+            self.arrive(HubVia::Teleport);
+        }
+
+        /// Runs `tiles` tiles in a straight line, two a tick.
+        fn run(&mut self, dx: i32, dy: i32, tiles: i32) {
+            for _ in 0..tiles / 2 {
+                self.ticks += 1;
+                self.x += 2 * dx;
+                self.y += 2 * dy;
+                self.arrive(HubVia::Move);
+            }
+        }
+
+        /// One tick's move of at most two tiles each way.
+        fn step(&mut self, dx: i32, dy: i32) {
+            self.ticks += 1;
+            self.x += dx;
+            self.y += dy;
+            self.arrive(HubVia::Move);
+        }
+
+        /// Stands still, for less than the minute after which the hub adds a point.
+        fn stand(&mut self, ticks: i64) {
+            self.ticks += ticks;
+        }
+
+        /// Stands still for minutes: the hub has a point for each of them.
+        fn wait(&mut self, minutes: i64) {
+            for _ in 0..minutes {
+                self.ticks += 100;
+                self.arrive(HubVia::Move);
+            }
+        }
+
+        /// Is gone for a while (logged out), and back on the same tile.
+        fn away(&mut self, minutes: i64) {
+            self.ticks += minutes * 100;
+            self.arrive(HubVia::Gap);
+        }
+    }
+
+    /// The same points again: a page of the hub's answer is handed over whole.
+    fn copy(points: &[HubLocationPoint]) -> Vec<HubLocationPoint> {
+        points
+            .iter()
+            .map(|point| HubLocationPoint {
+                at: point.at,
+                x: point.x,
+                y: point.y,
+                plane: point.plane,
+                world: point.world,
+                is_on_boat: point.is_on_boat,
+                via: point.via,
+            })
+            .collect()
+    }
+
+    /// The next of a fixed series of numbers that look random.
+    fn next(seed: &mut u64) -> u64 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *seed >> 33
+    }
+
+    /// Trips to a guild's bank: a teleport to its gate, 60 tiles west and 30
+    /// south to the bank, a moment there, and a teleport away to a few minutes
+    /// of running about.
+    fn bank_trips(trips: i32) -> Vec<HubLocationPoint> {
+        let mut route = Route::from(3200, 3200);
+        for trip in 0..trips {
+            bank_trip(&mut route, trip);
+        }
+        route.points
+    }
+
+    fn bank_trip(route: &mut Route, trip: i32) {
+        route.teleport(1658 + trip % 5, 3505);
+        route.run(-1, 0, 60);
+        route.run(0, -1, 30);
+        route.stand(20);
+        route.teleport(3200, 3200);
+        for _ in 0..12 {
+            route.run(1, 0, 20);
+            route.run(0, 1, 10);
+            route.run(-1, 0, 20);
+            route.run(0, 1, 10);
+        }
+    }
+
+    /// How far (in tiles) the line of a thinned trail passes from the tiles the
+    /// player was on: the furthest that one of `stays` lies from the line
+    /// between the two points of `built` it was left out between. What came
+    /// before a trail that was cut short isn't looked at.
+    fn furthest_off_the_line(stays: &[TrailPoint], built: &BuiltTrail) -> f64 {
+        let mut kept = 0;
+        let mut furthest: f64 = 0.0;
+        for stay in stays {
+            if built.points.get(kept) == Some(stay) {
+                kept += 1;
+                continue;
+            }
+            if kept == 0 {
+                continue;
+            }
+            let (a, b) = (&built.points[kept - 1], &built.points[kept]);
+            let (dx, dy) = ((b.x - a.x) as f64, (b.y - a.y) as f64);
+            let (px, py) = ((stay.x - a.x) as f64, (stay.y - a.y) as f64);
+            let length = dx * dx + dy * dy;
+            let along = if length > 0.0 {
+                ((px * dx + py * dy) / length).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            furthest = furthest.max((px - dx * along).hypot(py - dy * along));
+        }
+        assert_eq!(
+            kept,
+            built.points.len(),
+            "a thinned trail holds points of the trail only"
+        );
+        furthest
+    }
+
+    #[test]
+    fn a_thinned_trail_keeps_to_the_tiles_that_were_walked() {
+        // Close to three hours with a point every tick: five times what fits.
+        let stays = merge_stays(&bank_trips(40));
+        assert!(stays.len() > 15_000);
+        let built = thin_trail(stays.clone(), 3000);
+        assert!(built.points.len() <= 3000 && !built.truncated);
+        // The way from the gate to the bank still goes round the corner.
+        assert!(
+            furthest_off_the_line(&stays, &built) <= 1.0,
+            "the line passes {} tiles from where the player was",
+            furthest_off_the_line(&stays, &built)
+        );
+    }
+
+    #[test]
+    fn a_longer_trail_loses_its_smallest_corners_first() {
+        // Runs that sidestep two tiles every twenty: four corners each time.
+        let mut route = Route::from(3200, 3200);
+        for trip in 0..100 {
+            route.teleport(1700, 3505 + trip % 7);
+            for _ in 0..10 {
+                route.run(-1, 0, 20);
+                route.run(-1, 1, 2);
+                route.run(-1, 0, 20);
+                route.run(-1, -1, 2);
+            }
+        }
+        let stays = merge_stays(&route.points);
+        let built = thin_trail(stays.clone(), 3000);
+        assert!(built.points.len() <= 3000 && !built.truncated);
+        // The sidesteps are gone and nothing else: the line is two tiles off
+        // at most, and still has a point a minute.
+        let off = furthest_off_the_line(&stays, &built);
+        assert!(off > 1.0 && off <= 2.0, "{} tiles off", off);
+        assert_eq!(built.step, 60);
+    }
+
+    #[test]
+    fn hours_of_walking_without_a_break_are_thinned_like_any_walk() {
+        // Round a block of 40 by 20 tiles, some three hours long.
+        let mut route = Route::from(3200, 3200);
+        for _ in 0..300 {
+            route.run(1, 0, 40);
+            route.run(0, 1, 20);
+            route.run(-1, 0, 40);
+            route.run(0, -1, 20);
+        }
+        let stays = merge_stays(&route.points);
+        assert!(stays.len() > 8 * MAX_WEIGHED_POINTS);
+        let built = thin_trail(stays.clone(), 3000);
+        // Four corners a lap, a point a minute, and where it was halved.
+        assert!(built.points.len() < 1500 && !built.truncated);
+        assert_eq!(built.step, 60);
+        assert!(furthest_off_the_line(&stays, &built) <= 1.0);
+    }
+
+    #[test]
+    fn a_trail_too_long_to_keep_its_way_is_cut_short_rather_than_straightened() {
+        // 21 hours of trips to the bank: forty times what fits.
+        let stays = merge_stays(&bank_trips(300));
+        let built = thin_trail(stays.clone(), 3000);
+        assert_eq!(built.points.len(), 3000);
+        assert!(built.truncated);
+        assert_eq!(built.points.last(), stays.last());
+        // What is left still goes round the corner on the way to the bank,
+        // which is 26 tiles from the straight line there.
+        let off = furthest_off_the_line(&stays, &built);
+        assert!(off <= 4.0, "{} tiles off", off);
+        // No two of its points are further apart than those of a trail that
+        // wasn't thinned.
+        assert_eq!(built.step, 60);
+        // Running without a stop and a corner every few seconds is the least
+        // that fits: some four of the 21 hours.
+        let hours = (built.points[2999].last - built.points[0].first) as f64 / 3600.0;
+        assert!((3.5..5.0).contains(&hours), "{} hours", hours);
+    }
+
+    #[test]
+    fn a_corner_is_needed_for_as_long_as_the_line_would_miss_it_and_always_past_four_tiles() {
+        // Twenty tiles on, `aside` tiles to the side, twenty tiles on, at an
+        // even pace: the weight of the point in the middle.
+        let weight_of_a_corner = |aside: i32| {
+            let stays = merge_stays(&[
+                tick(0, 3200, 3200, HubVia::Move),
+                tick(10, 3220, 3200 + aside, HubVia::Move),
+                tick(20, 3240, 3200, HubVia::Move),
+            ]);
+            let mut weights = Vec::new();
+            weigh(&stays, 0, &mut weights);
+            weights[1]
+        };
+        // On the line: never needed. Then a level for every tile up to four.
+        assert_eq!(weight_of_a_corner(1), 0);
+        assert_eq!(weight_of_a_corner(2), 1);
+        assert_eq!(weight_of_a_corner(3), 2);
+        assert_eq!(weight_of_a_corner(4), 3);
+        // More than four tiles off is a corner the trail never loses.
+        assert_eq!(weight_of_a_corner(5), ALWAYS);
+    }
+
+    #[test]
+    fn a_thinned_trail_says_the_longest_time_it_left_between_two_points() {
+        // A point a minute: thinning this is leaving time out.
+        let built = thin_trail(merge_stays(&walk(0..5000)), 3000);
+        let longest = built
+            .points
+            .windows(2)
+            .map(|pair| pair[1].first - pair[0].last)
+            .max()
+            .unwrap();
+        assert!(longest > 60);
+        assert_eq!(built.step, longest);
+    }
+
+    #[test]
+    fn a_break_and_a_stay_are_no_time_between_two_points() {
+        // Trips with ten minutes on one tile in the middle of them, a few
+        // tiles on, and three hours logged out.
+        let mut route = Route::from(3200, 3200);
+        for trip in 0..40 {
+            bank_trip(&mut route, trip);
+            if trip == 20 {
+                route.wait(10);
+                route.run(1, 0, 10);
+                route.away(180);
+            }
+        }
+        let stays = merge_stays(&route.points);
+        let built = thin_trail(stays.clone(), 3000);
+        assert!(built.points.len() < stays.len() && !built.truncated);
+        // The ten minutes are one point, and the three hours are a break.
+        let waited = built
+            .points
+            .iter()
+            .find(|point| point.last - point.first == 600)
+            .expect("the stay is kept");
+        assert!(built
+            .points
+            .iter()
+            .any(|point| point.via == Some(HubVia::Gap)));
+        assert_eq!(waited.x, 3200);
+        assert_eq!(built.step, 60);
+    }
+
+    #[test]
+    fn a_trail_that_was_not_thinned_keeps_a_step_of_a_minute() {
+        // Four minutes without a point is not a gap yet, and not thinning.
+        let stays = merge_stays(&[sample(0, 3200, 3200), sample(4, 3210, 3200)]);
+        let built = thin_trail(stays, 1000);
+        assert_eq!((built.points.len(), built.step), (2, 60));
+    }
+
+    /// A walk that never goes straight for long: runs of 6 to 20 tiles with a
+    /// sidestep of up to four between them, there and back along a road.
+    fn winding_walk(route: &mut Route, legs: i32, seed: &mut u64) {
+        for leg in 0..legs {
+            let along = if (leg / 40) % 2 == 0 { -1 } else { 1 };
+            route.run(along, 0, 6 + 2 * (next(seed) % 8) as i32);
+            let aside = if next(seed) % 2 == 0 { 1 } else { -1 };
+            for _ in 0..1 + next(seed) % 4 {
+                route.step(0, aside);
+            }
+        }
+    }
+
+    /// Trips with a sidestep of four tiles every twenty, which only the
+    /// coarsest tolerance can do without.
+    fn sidestepping_trips(route: &mut Route, trips: i32) {
+        for trip in 0..trips {
+            route.teleport(1700, 3505 + trip % 7);
+            for _ in 0..10 {
+                route.run(-1, 0, 20);
+                route.run(-1, 1, 4);
+                route.run(-1, 0, 20);
+                route.run(-1, -1, 4);
+            }
+        }
+    }
+
+    /// Hours of such trips, a long winding walk, and more trips: too much for
+    /// anything but the coarsest tolerance, before the walk and after it. With
+    /// the points: where the walk starts and where it ends.
+    fn trips_around_a_long_walk() -> (Vec<HubLocationPoint>, usize, usize) {
+        let mut route = Route::from(3200, 3200);
+        sidestepping_trips(&mut route, 300);
+        route.teleport(3200, 3400);
+        let start = route.points.len();
+        winding_walk(&mut route, 500, &mut 17);
+        let end = route.points.len();
+        sidestepping_trips(&mut route, 150);
+        (route.points, start, end)
+    }
+
+    #[test]
+    fn the_older_and_the_recent_part_are_thinned_as_one_trail() {
+        let (points, start, end) = trips_around_a_long_walk();
+        let stays = merge_stays(&points);
+        // The older part ends in the middle of the walk.
+        let split = start + (end - start) * 5 / 8;
+        let until = points[split - 1].at;
+        let older = older_part(&[copy(&points[..split])], until, false);
+        assert_eq!(older.trail.level, Some(3));
+        let joined = join_recent(older, &points[split - 1..]);
+        assert_eq!((joined.level, joined.truncated), (Some(3), false));
+        // Measured against every tile of the walk, not against what the older
+        // part had left of it.
+        let off = furthest_off_the_line(&stays, &joined.built());
+        assert!(off <= 4.0, "{} tiles off", off);
+    }
+
+    #[test]
+    fn a_trail_keeps_its_level_while_its_recent_part_grows() {
+        let (points, start, end) = trips_around_a_long_walk();
+        let split = start + 200;
+        let until = points[split - 1].at;
+        let older = older_part(&[copy(&points[..split])], until, false);
+        assert_eq!(older.trail.level, Some(3));
+        // The same older part for ten minutes, and more of the walk each one.
+        for minutes in 1..=25 {
+            let older = OlderTrail {
+                until,
+                last_at: older.last_at,
+                trail: older.trail.clone(),
+            };
+            let recent = &points[split - 1..(split + minutes * 100).min(end)];
+            let joined = join_recent(older, recent);
+            assert_eq!(
+                (joined.level, joined.truncated),
+                (Some(3), false),
+                "{} minutes on",
+                minutes
+            );
+        }
+    }
+
+    #[test]
+    fn the_older_part_leaves_room_for_the_recent_one() {
+        // Trips of which the coarsest tolerance keeps just under 3000 points,
+        // and the start of a long walk.
+        let mut route = Route::from(3200, 3200);
+        sidestepping_trips(&mut route, 586);
+        route.teleport(3200, 3400);
+        let start = route.points.len();
+        winding_walk(&mut route, 500, &mut 17);
+        let points = route.points;
+        let split = start + 200;
+        let stays = merge_stays(&points[..split]);
+        let mut weights = Vec::new();
+        weigh(&stays, 0, &mut weights);
+        let fit_at_3 = weights.iter().filter(|weight| **weight > 3).count();
+        assert!((2900..=3000).contains(&fit_at_3), "{} points", fit_at_3);
+        // It would fit as it is, and the walk's next minutes would not. So the
+        // older part goes a level further at once, and stays there.
+        let until = points[split - 1].at;
+        let older = older_part(&[copy(&points[..split])], until, false);
+        assert_eq!(older.trail.level, Some(4));
+        for minutes in 1..=25 {
+            let older = OlderTrail {
+                until,
+                last_at: older.last_at,
+                trail: older.trail.clone(),
+            };
+            let recent = &points[split - 1..(split + minutes * 100).min(points.len())];
+            let joined = join_recent(older, recent);
+            assert_eq!(
+                (joined.level, joined.truncated),
+                (Some(4), false),
+                "{} minutes on",
+                minutes
+            );
+        }
+    }
+
+    #[test]
+    fn a_point_a_minute_on_straight_legs_is_thinned_by_time_and_a_week_of_it_fits() {
+        // A hub or a plugin from before the tick trail: a week round the
+        // clock, in straight legs of 5 to 15 minutes at a walk. Only the
+        // turns are off the line, so what has to go is time. (A point a
+        // minute that turns every minute is all corners, and is cut short.)
+        let mut seed = 3;
+        let (mut x, mut y) = (3000, 3400);
+        let mut points = Vec::new();
+        let mut minute = 0;
+        while minute < 7 * 24 * 60 {
+            let (dx, dy) = match (x, y) {
+                (3500.., _) => (-1, 0),
+                (..=2500, _) => (1, 0),
+                (_, 3600..) => (0, -1),
+                (_, ..=2900) => (0, 1),
+                _ => [(1, 0), (0, 1), (-1, 0), (0, -1)][(next(&mut seed) % 4) as usize],
+            };
+            for _ in 0..5 + next(&mut seed) % 11 {
+                points.push(sample(minute, x, y));
+                x += 30 * dx;
+                y += 30 * dy;
+                minute += 1;
+            }
+        }
+        let stays = merge_stays(&points);
+        assert!(stays.iter().all(|stay| !stay.jump));
+        let built = thin_trail(stays.clone(), 3000);
+        assert!(built.points.len() <= 3000 && !built.truncated);
+        // Five minutes between two points is what it took, and no more.
+        assert_eq!(built.step, 300);
+        assert_eq!(built.points[0].first, TRAIL_START);
+        let off = furthest_off_the_line(&stays, &built);
+        assert!(off <= 4.0, "{} tiles off", off);
     }
 
     #[test]
@@ -715,8 +1370,9 @@ mod tests {
         let stays = merge_stays(&points);
         assert!(stays.iter().all(|stay| !stay.jump));
         let built = thin_trail(stays, 3000);
-        assert!(built.points.len() <= 2501);
-        assert_eq!(built.step, 120);
+        assert!(built.points.len() <= 3000 && !built.truncated);
+        // A point a minute: more than half of them had to go.
+        assert!(built.step > 60);
     }
 
     #[test]
@@ -746,16 +1402,10 @@ mod tests {
         assert!(join_pages(&[Vec::new()]).is_empty());
     }
 
-    fn older(points: &[HubLocationPoint], step: i64) -> OlderTrail {
-        OlderTrail {
-            until: DateTime::from_timestamp(TRAIL_START + 100, 0).unwrap(),
-            last_at: points.last().map(|point| point.at),
-            trail: BuiltTrail {
-                points: merge_stays(points),
-                step,
-                truncated: false,
-            },
-        }
+    /// The older part of a trail the hub gave in one page, read up to 100 s in.
+    fn older(points: &[HubLocationPoint]) -> OlderTrail {
+        let until = DateTime::from_timestamp(TRAIL_START + 100, 0).unwrap();
+        older_part(&[copy(points)], until, false)
     }
 
     #[test]
@@ -773,7 +1423,7 @@ mod tests {
             tick(80, 3201, 3200, HubVia::Move),
             tick(81, 2900, 3200, HubVia::Teleport),
         ];
-        let built = join_recent(older(&first, 600), &recent);
+        let built = join_recent(older(&first), &recent).built();
         let stays: Vec<(i32, i64, i64)> = built
             .points
             .iter()
@@ -782,8 +1432,22 @@ mod tests {
         // The stay on the last tile goes on; nothing is there twice.
         assert_eq!(stays, [(3200, 10, 10), (3201, 20, 80), (2900, 81, 81)]);
         assert!(built.points[2].jump);
-        // The older part was thinned to ten minutes, and the trail says so.
-        assert_eq!(built.step, 600);
+        assert_eq!((built.step, built.truncated), (60, false));
+    }
+
+    #[test]
+    fn a_trail_whose_older_part_was_cut_short_says_so() {
+        let first = [
+            tick(10, 3200, 3200, HubVia::Move),
+            tick(20, 3201, 3200, HubVia::Move),
+        ];
+        let until = DateTime::from_timestamp(TRAIL_START + 100, 0).unwrap();
+        // The hub had more than the pages that were read.
+        let older = older_part(&[copy(&first)], until, true);
+        assert!(older.trail.truncated);
+        let recent = [tick(101, 3202, 3200, HubVia::Move)];
+        assert!(join_recent(older, &recent).truncated);
+        assert!(!join_recent(older_part(&[copy(&first)], until, false), &recent).truncated);
     }
 
     #[test]
@@ -798,7 +1462,7 @@ mod tests {
             tick(20, 3201, 3200, HubVia::Move),
             tick(21, 3202, 3200, HubVia::Move),
         ];
-        let built = join_recent(older(&first, 60), &stale);
+        let built = join_recent(older(&first), &stale);
         let xs: Vec<i32> = built.points.iter().map(|point| point.x).collect();
         assert_eq!(xs, [3200, 3201, 3202]);
         // Without any older point the recent part starts after `until`.
@@ -806,7 +1470,7 @@ mod tests {
             tick(50, 3100, 3200, HubVia::Move),
             tick(101, 3101, 3200, HubVia::Move),
         ];
-        let built = join_recent(older(&[], 60), &late);
+        let built = join_recent(older(&[]), &late);
         assert_eq!(built.points.len(), 1);
         assert_eq!(built.points[0].x, 3101);
     }
@@ -832,19 +1496,73 @@ mod tests {
     }
 
     #[test]
-    fn thinning_is_stable_as_the_window_slides() {
-        let earlier = thin_trail(merge_stays(&walk(0..5000)), 3000);
-        let later = thin_trail(merge_stays(&walk(120..5120)), 3000);
-        assert_eq!(earlier.step, later.step);
-        let known: HashSet<i64> = earlier.points.iter().map(|point| point.first).collect();
-        // The window's own first and last points aside, the same samples are kept.
-        let shared = &later.points[1..later.points.len() - 1];
-        let moved = shared
-            .iter()
-            .filter(|point| point.first < TRAIL_START + 5000 * 60 - later.step)
-            .filter(|point| !known.contains(&point.first))
+    fn thinning_keeps_both_sides_of_a_change_of_floor() {
+        let mut points = walk(0..5000);
+        // Up a ladder and down again further on: the same tiles, another floor.
+        for point in &mut points[2001..2400] {
+            point.plane = 1;
+        }
+        let built = thin_trail(merge_stays(&points), 3000);
+        assert!(built.step > 60);
+        let times: HashSet<i64> = built.points.iter().map(|point| point.first).collect();
+        for minute in [2000, 2001, 2399, 2400] {
+            assert!(
+                times.contains(&(TRAIL_START + minute * 60)),
+                "minute {}",
+                minute
+            );
+        }
+    }
+
+    #[test]
+    fn a_tile_the_player_stood_on_survives_thinning() {
+        // Straight runs of 120 tiles, each with half a minute's stand halfway.
+        let mut route = Route::from(3200, 3200);
+        for trip in 0..150 {
+            route.teleport(1700, 3505 + trip % 7);
+            route.run(-1, 0, 60);
+            route.stand(50);
+            route.run(-1, 0, 60);
+        }
+        let stays = merge_stays(&route.points);
+        let built = thin_trail(stays.clone(), 3000);
+        assert!(built.points.len() < stays.len() / 2 && built.step == 60);
+        // On a straight line it is the time that tells: the trail still has
+        // the player on that tile until they ran on.
+        let stood = built
+            .points
+            .windows(2)
+            .filter(|pair| pair[0].x == 1640 && pair[1].x == 1638)
+            .filter(|pair| pair[1].first - pair[0].last >= 29)
             .count();
-        assert_eq!(moved, 0);
+        assert_eq!(stood, 150);
+    }
+
+    #[test]
+    fn thinning_is_stable_as_the_window_slides() {
+        let points = bank_trips(44);
+        let earlier = thin_trail(merge_stays(&points[..16_000]), 3000);
+        let later = thin_trail(merge_stays(&points[900..]), 3000);
+        assert_eq!(earlier.step, later.step);
+        // What lies between the first and the last break both windows have is
+        // thinned to the same points in both.
+        let from = later.points.iter().find(|point| point.jump).unwrap().first;
+        let until = earlier
+            .points
+            .iter()
+            .rfind(|point| point.jump)
+            .unwrap()
+            .first;
+        let shared = |trail: &BuiltTrail| -> Vec<TrailPoint> {
+            trail
+                .points
+                .iter()
+                .filter(|point| point.first > from && point.first < until)
+                .cloned()
+                .collect()
+        };
+        assert!(shared(&earlier).len() > 1000);
+        assert_eq!(shared(&earlier), shared(&later));
     }
 
     #[test]

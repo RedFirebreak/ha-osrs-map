@@ -37,8 +37,9 @@ of Group Ironman teams:
 - **Player profile**: vitals, total level and XP, carried value, gear and inventory, skills; XP gained
   today, this week, month or year; play time and sessions with their worlds; carried value over 30 days;
   gear changes; recent events. The map follows the player while it's open.
-- **Trails** of up to eight players at once, each in the player's colour (24 hours, 7 or 30 days). A
-  trail ends on the player's marker and grows as they move, fading with age. Teleports are drawn as arcs,
+- **Trails** of up to eight players at once, each in the player's colour (24 hours or 7 days). A trail
+  follows the tiles the player walked; of a busy player it shows the newest part and says since when. It
+  ends on the player's marker and grows as they move, fading with age. Teleports are drawn as arcs,
   boat trips as waves, and parts on another floor faintly. The player's events are marked along it,
   over the whole length of the trail (an event that doesn't say where it happened goes where the trail
   has the player at the time; of a very busy player the oldest may be missing, as at most 2000 drops

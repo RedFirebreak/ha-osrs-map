@@ -8,6 +8,9 @@ import { band } from "./trail-model";
 // How far a curve's handle may reach, as a share of its segment: enough to
 // round a corner, too little to loop or swing wide next to a long neighbour.
 const HANDLE_CLAMP = 0.4;
+// And never further than this: a thinned trail has only the corners of a long
+// run, and the tiles between two of them lie on the straight line.
+const HANDLE_MAX = 1.5 * PIXELS_PER_TILE;
 // Per level of detail: points nearer than this (tiles) to the last one kept
 // are skipped; a curve gets a vertex per this many pixels, up to a maximum.
 const LOD_TOLERANCE_TILES = [0, 1.5, 4];
@@ -32,7 +35,7 @@ export function lodForZoom(zoom) {
  * smoothly from p0 and on to p3 (Catmull-Rom), with the handles kept short.
  */
 export function bezierHandles(p0, p1, p2, p3, clamp = HANDLE_CLAMP) {
-  const limit = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) * clamp;
+  const limit = Math.min(Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) * clamp, HANDLE_MAX);
   const handle = (from, to) => {
     let x = (to[0] - from[0]) / 6;
     let y = (to[1] - from[1]) / 6;

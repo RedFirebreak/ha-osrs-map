@@ -368,6 +368,27 @@ describe("time on a trail", () => {
     const gappy = buildTrailModel([at(3200, 3200, 0), at(3200, 3210, 60)]);
     expect(nextChangeAfter(gappy, T + 30)).toBe(T + 3600);
   });
+
+  it("waits out a logout on a trail that has hours between two of its points", () => {
+    // Two hours on one patch are two points of a thinned trail, so `step` is
+    // two hours; the three hours logged out after it are still an absence.
+    const points = [
+      at(3200, 3200, 0, { via: "move" }),
+      at(3202, 3200, 120, { via: "move" }),
+      at(3202, 3200, 300, { via: "gap" }),
+    ];
+    const model = buildTrailModel(points, { step: 7200 });
+    expect(model.kinds).toEqual(["walk", "unknown"]);
+    // Under way on the patch, away after it.
+    expect(nextChangeAfter(model, T + 3600)).toBe(T + 3600);
+    expect(nextChangeAfter(model, T + 121 * 60)).toBe(T + 300 * 60);
+  });
+
+  it("says the landing is what happens next when a jump is still to come", () => {
+    // Stood for a minute after the last point, then teleported.
+    const model = buildTrailModel([at(3200, 3200, 0), at(2662, 3305, 1, { via: "teleport" })]);
+    expect(nextChangeAfter(model, T + 30)).toBe(T + 60);
+  });
 });
 
 describe("events and the timeline", () => {

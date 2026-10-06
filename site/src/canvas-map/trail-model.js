@@ -149,11 +149,12 @@ const CONNECTED = new Set(["walk", "stairs", "sail"]);
  * line (`{i0, i1, sail}`, point indices; a boat trip is its own run and
  * shares its end points with the walks around it; a run may be one point),
  * `jumps` the steps between runs (`{from, kind}`, from point `from` to the
- * next). `step` is the server's thinning stride, so that the wider spacing
- * of a thinned trail isn't taken for gaps where the hub didn't label it.
+ * next). `step` is the longest time the server left between two points with
+ * no break between them, so that the wider spacing of a thinned trail isn't
+ * taken for gaps where the hub didn't label it.
  */
 export function buildTrailModel(points, { step = IDLE_S } = {}) {
-  const gapS = Math.max(GAP_S, 3 * step);
+  const gapS = Math.max(GAP_S, step);
   const kinds = [];
   for (let i = 0; i + 1 < points.length; i++) {
     kinds.push(classifyStep(points[i], points[i + 1], gapS));
@@ -316,15 +317,17 @@ export function positionAt(model, t) {
  * nothing is happening, null after the last point.
  */
 export function nextChangeAfter(model, t) {
-  const { points, gapS } = model;
+  const { points, kinds, gapS } = model;
   if (!points.length) return null;
   const index = indexAt(points, t);
   if (index < 0) return points[0].t0;
   const next = points[index + 1];
   if (!next) return null;
   if (t <= points[index].t1) return points[index].t1;
-  // A long absence, whatever the step turned out to be when the player came back.
-  if (next.t0 - points[index].t1 > gapS) return next.t0;
+  // Nothing happens before a jump lands, however long that takes. A thinned
+  // trail can have hours between two points of one walk, so the time alone
+  // doesn't tell a logout from a quiet stretch; the kind of step does.
+  if (!CONNECTED.has(kinds[index]) || next.t0 - points[index].t1 > gapS) return next.t0;
   return t;
 }
 

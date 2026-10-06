@@ -32,7 +32,7 @@
 // a dungeon entrance, a death, a world hop, two rooms of a house and a logout,
 // and the same events
 // every lap: a level, a 14.5M drop, a collection log slot. MOCK_HUB_TRAIL_HOURS
-// sets how far back trails go (default 6; 720 gives enough to need thinning).
+// sets how far back trails go (default 6; 168 is the week a trail can be).
 const http = require("http");
 const crypto = require("crypto");
 
