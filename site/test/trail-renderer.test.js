@@ -79,6 +79,24 @@ describe("drawTrail, live", () => {
     expect(outline.width).toBeGreaterThan(colored[0].width);
   });
 
+  it("measures the age of a trail that ended earlier from its end, not from now", () => {
+    // A session of an hour that ended ten hours ago.
+    const points = [at(3200, 3200, 660), at(3210, 3200, 659), at(3220, 3200, 601), at(3230, 3200, 600)];
+    const drawn = (mode) => {
+      const ctx = recordingContext();
+      const trail = trailOf(points.map((point) => ({ ...point, via: "move" })));
+      drawTrail(ctx, viewOf(3215, 3200), trail, mode);
+      return inColor(ctx).filter((stroke) => !stroke.dash.length);
+    };
+    // Seen from now the whole of it is old and faint.
+    const fromNow = drawn({ kind: "live", windowS: 86400 });
+    expect(Math.max(...fromNow.map((stroke) => stroke.alpha))).toBeLessThan(0.6);
+    // Seen from its own end, that end is as bright as a trail's newest part.
+    const fromItsEnd = drawn({ kind: "live", windowS: 3600, endS: NOW - 600 * 60 });
+    expect(Math.max(...fromItsEnd.map((stroke) => stroke.alpha))).toBeGreaterThan(0.9);
+    expect(Math.min(...fromItsEnd.map((stroke) => stroke.alpha))).toBeLessThan(0.5);
+  });
+
   it("fades and thins the line the older it is", () => {
     const ctx = recordingContext();
     const points = [at(3200, 3200, 600), at(3210, 3200, 599), at(3220, 3200, 1), at(3230, 3200, 0)];

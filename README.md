@@ -39,7 +39,11 @@ of Group Ironman teams:
   gear changes; recent events. The map follows the player while it's open.
 - **Trails** of up to eight players at once, each in the player's colour (24 hours or 7 days). A trail
   follows the tiles the player walked; of a busy player it shows the newest part and says since when. It
-  ends on the player's marker and grows as they move, fading with age. Teleports are drawn as arcs,
+  ends on the player's marker and grows as they move, fading with age. Below the two lengths the menu
+  lists the play sessions of the last 7 days (the newest twelve) of the selected player, or of the first
+  trail's when the selected one has no trail on: pick one and every trail on the map shows that time
+  only, which is how to look back at one evening without the week around it. A session that is over
+  ends where the player was then, not on their marker. Teleports are drawn as arcs,
   boat trips as waves, and parts on another floor faintly. The player's events are marked along it,
   over the whole length of the trail (an event that doesn't say where it happened goes where the trail
   has the player at the time; of a very busy player the oldest may be missing, as at most 2000 drops
@@ -229,7 +233,8 @@ To try the map without a hub, run the mock and point the backend at it. `MOCK_HU
 many players it serves (default 12); every fourth keeps its inventory, equipment and trail private. The
 first player walks a fixed 40-minute route with everything a trail can show (teleports, a boat trip,
 stairs, a dungeon, a death, two rooms of a house, a logout) and the same events every lap (a level, a 14.5M drop, a collection
-log slot); `MOCK_HUB_TRAIL_HOURS` sets how far back trails go (default 6). Every `MOCK_HUB_EVENT_MS`
+log slot), and every lap is one play session; `MOCK_HUB_TRAIL_HOURS` sets how far back trails go
+(default 6). Every `MOCK_HUB_EVENT_MS`
 (default 4000) a random online player gets an event of a random type. The mock also stands in for
 Discord: with `DISCORD_API_BASE` pointed at it, "Log in with Discord" asks whether to come in as an
 admin, a member, or someone the hub doesn't know.

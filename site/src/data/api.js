@@ -166,13 +166,22 @@ class Api {
     return (await this.hubResponse(path)).json();
   }
 
+  /** A span of trail as the server takes it: `days=`, or `from=` and maybe `to=`. */
+  spanParams(span) {
+    if (typeof span === "number") return { days: String(span) };
+    return span.to === null || span.to === undefined
+      ? { from: String(span.from) }
+      : { from: String(span.from), to: String(span.to) };
+  }
+
   /**
    * Location trails of several players: `{as_of, trails: [{member, shared,
    * points, step, truncated, worlds}]}`; see decodeTrail in trail-model.js
-   * for what a trail holds.
+   * for what a trail holds. `span` is a number of days up to now, or `{from,
+   * to}` in unix seconds (a play session; `to` null while it goes on).
    */
-  async getTrails(memberNames, days) {
-    const params = new URLSearchParams({ members: memberNames.join(","), days: String(days) });
+  async getTrails(memberNames, span) {
+    const params = new URLSearchParams({ members: memberNames.join(","), ...this.spanParams(span) });
     return this.getHubJson(`trails?${params}`);
   }
 
@@ -223,12 +232,14 @@ class Api {
   }
 
   /**
-   * A player's events of the last `days`, newest first, to mark along their
-   * trail: every kind the map shows, drops only from `minLoot` gp. The server
-   * reads at most a few thousand; for a busy player the oldest may be missing.
+   * A player's events over the span of their trail (see getTrails), newest
+   * first, to mark along it: every kind the map shows, drops only from
+   * `minLoot` gp. The server reads at most a few thousand; for a busy player
+   * the oldest may be missing.
    */
-  async getTrailEvents(memberName, days, minLoot = 0) {
-    return this.getHubJson(`${this.playerPath(memberName, "trail-events")}?days=${days}&min_loot=${minLoot}`);
+  async getTrailEvents(memberName, span, minLoot = 0) {
+    const params = new URLSearchParams({ ...this.spanParams(span), min_loot: String(minLoot) });
+    return this.getHubJson(`${this.playerPath(memberName, "trail-events")}?${params}`);
   }
 }
 

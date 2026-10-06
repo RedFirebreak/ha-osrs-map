@@ -73,6 +73,7 @@ describe("map page trails", () => {
     document.body.append(authed, worldMap);
     pubsub.publish("features", { hub_history: true });
     vi.spyOn(api, "getTrailEvents").mockResolvedValue([]);
+    vi.spyOn(api, "getPlayerSessions").mockResolvedValue({ sessions: [], total_ms: 0 });
   });
 
   afterEach(() => {
@@ -160,7 +161,12 @@ describe("map page trails", () => {
     await settle();
     const { color, light } = colorForName("Alice");
     expect(worldMap.setTrail).toHaveBeenCalledTimes(1);
-    expect(worldMap.setTrail).toHaveBeenCalledWith("Alice", response.trails[0], { color, light, windowS: 86400 });
+    expect(worldMap.setTrail).toHaveBeenCalledWith("Alice", response.trails[0], {
+      color,
+      light,
+      windowS: 86400,
+      until: null,
+    });
     expect(page.querySelector('[data-name="Bob"]').textContent).toContain("not shared");
   });
 
@@ -528,6 +534,116 @@ describe("map page trails", () => {
     const time = (date) => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     expect(await chip(47)).toBe(`Alice (since ${day(start(47))} ${time(start(47))})`);
     expect(await chip(49)).toBe(`Alice (since ${day(start(49))})`);
+  });
+
+  describe("a play session", () => {
+    const START = NOW_S - 5 * 3600;
+    const END = NOW_S - 3 * 3600;
+    const iso = (seconds) => new Date(seconds * 1000).toISOString();
+    const over = { started_at: iso(START), ended_at: iso(END), last_seen_at: iso(END), duration_ms: 7200000 };
+    const open = { started_at: iso(NOW_S - 1800), ended_at: null, last_seen_at: iso(NOW_S), duration_ms: 1800000 };
+    const select = () => page.querySelector(".map-page__trail-days");
+    const sessionOptions = () => [...select().querySelectorAll("optgroup option")];
+
+    async function shown(names, sessions = [open, over]) {
+      api.getPlayerSessions.mockResolvedValue({ sessions, total_ms: 0 });
+      vi.spyOn(api, "getTrails").mockImplementation(async (members) => trailsResponse(members));
+      mount();
+      for (const name of names) selection.toggleTrail(name);
+      await settle();
+    }
+
+    async function pick(index) {
+      select().value = sessionOptions()[index].value;
+      select().dispatchEvent(new Event("change"));
+      await settle();
+    }
+
+    afterEach(() => {
+      pubsub.publish("player-selected", null);
+    });
+
+    it("lists the sessions of the first trail's player below the lengths", async () => {
+      await shown(["Alice", "Bob"]);
+      expect(api.getPlayerSessions).toHaveBeenCalledWith("Alice", 7);
+      expect(select().querySelector("optgroup").label).toBe("Sessions of Alice");
+      expect(sessionOptions()).toHaveLength(2);
+      expect(sessionOptions()[0].textContent).toMatch(/^Now, since /);
+      expect([...select().options].slice(0, 2).map((option) => option.value)).toEqual(["1", "7"]);
+      expect(select().value).toBe("1");
+    });
+
+    it("lists those of the selected player when their trail is on", async () => {
+      await shown(["Alice", "Bob"]);
+      selection.select("Bob");
+      await settle();
+      expect(api.getPlayerSessions).toHaveBeenLastCalledWith("Bob", 7);
+      expect(select().querySelector("optgroup").label).toBe("Sessions of Bob");
+    });
+
+    it("shows every trail over the session that was picked, a minute to either side", async () => {
+      await shown(["Alice", "Bob"]);
+      await pick(1);
+      const span = { from: START - 60, to: END + 60 };
+      expect(api.getTrails).toHaveBeenLastCalledWith(["Alice", "Bob"], span);
+      expect(api.getTrailEvents).toHaveBeenLastCalledWith("Bob", span, 100000);
+      // Drawn as a trail that ended then, as long as the session was.
+      const style = worldMap.setTrail.mock.calls.at(-1)[2];
+      expect(style).toMatchObject({ windowS: END - START + 120, until: END + 60 });
+    });
+
+    it("shows a session that is still going on until now", async () => {
+      await shown(["Alice"]);
+      await pick(0);
+      expect(api.getTrails).toHaveBeenLastCalledWith(["Alice"], { from: NOW_S - 1800 - 60, to: null });
+      const style = worldMap.setTrail.mock.calls.at(-1)[2];
+      expect(style).toMatchObject({ windowS: 1860, until: null });
+    });
+
+    it("does not remember a session as the length of the trails", async () => {
+      await shown(["Alice"]);
+      await pick(1);
+      expect(JSON.parse(localStorage.getItem("map-trail-days") || '"1"')).toBe("1");
+    });
+
+    it("keeps the session that was picked while another player is selected", async () => {
+      await shown(["Alice", "Bob"]);
+      await pick(1);
+      selection.select("Bob");
+      await settle();
+      expect(select().querySelector("optgroup").label).toBe("Sessions of Alice");
+      expect(api.getTrails).toHaveBeenLastCalledWith(["Alice", "Bob"], { from: START - 60, to: END + 60 });
+    });
+
+    it("goes back to the length it remembers when the session's player is taken off", async () => {
+      await shown(["Alice", "Bob"]);
+      await pick(1);
+      selection.toggleTrail("Alice");
+      await settle();
+      expect(select().value).toBe("1");
+      expect(api.getTrails).toHaveBeenLastCalledWith(["Bob"], 1);
+      expect(select().querySelector("optgroup").label).toBe("Sessions of Bob");
+    });
+
+    it("follows a session that ends while it is shown", async () => {
+      await shown(["Alice"]);
+      await pick(0);
+      const ended = { ...open, ended_at: iso(NOW_S + 30), last_seen_at: iso(NOW_S + 30) };
+      api.getPlayerSessions.mockResolvedValue({ sessions: [ended, over], total_ms: 0 });
+      await vi.advanceTimersByTimeAsync(61000);
+      await settle();
+      expect(api.getTrails).toHaveBeenLastCalledWith(["Alice"], { from: NOW_S - 1800 - 60, to: NOW_S + 30 + 60 });
+    });
+
+    it("has no sessions to offer when the player doesn't share them", async () => {
+      api.getPlayerSessions.mockRejectedValue(Object.assign(new Error("not shared"), { status: 404 }));
+      vi.spyOn(api, "getTrails").mockResolvedValue(trailsResponse(["Alice"]));
+      mount();
+      selection.toggleTrail("Alice");
+      await settle();
+      expect(select().querySelector("optgroup")).toBeNull();
+      expect(worldMap.trailNames()).toEqual(["Alice"]);
+    });
   });
 
   it("offers 24 hours and 7 days", () => {

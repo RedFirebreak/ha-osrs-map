@@ -34,12 +34,15 @@ export class TrailLayer {
 
   /**
    * Shows (or refreshes) a player's trail from the server's answer; see
-   * decodeTrail. `windowS` is how far back the trail was asked for. A server
-   * that doesn't say when the hub gave the trail is taken to have asked now.
+   * decodeTrail. `windowS` is how long a time the trail was asked for, and
+   * `until` when that time ended (unix seconds) if it didn't run until now:
+   * a play session that is over. Such a trail is what the hub has of it and
+   * no more; where the player is now is no part of it. A server that doesn't
+   * say when the hub gave the trail is taken to have asked now.
    */
-  setHistory(name, raw, { color, light, windowS = DAY_S }) {
+  setHistory(name, raw, { color, light, windowS = DAY_S, until = null }) {
     const { points, step, asOf = this.now() } = decodeTrail(raw);
-    this.trails.set(name, { history: points, step, asOf, color, light, windowS });
+    this.trails.set(name, { history: points, step, asOf, color, light, windowS, until });
     this.rebuild(name);
   }
 
@@ -67,6 +70,12 @@ export class TrailLayer {
     return Boolean(this.seen.get(name)?.online);
   }
 
+  /** Whether a player's trail is shown and runs until now. */
+  endsNow(name) {
+    const trail = this.trails.get(name);
+    return Boolean(trail) && trail.until === null;
+  }
+
   /**
    * Notes where a player is (`{x, y, plane, boat, world}` in the site's
    * coordinates, or null when that isn't known) and whether they are online.
@@ -86,7 +95,8 @@ export class TrailLayer {
       // Coming back online starts a new stay: the time away isn't time spent there.
       if (seen.online) moved = observeLive(seen.buffer, position, this.now(), { fresh: !wasOnline });
     }
-    if (!this.trails.has(name)) return false;
+    // A trail that ended before now doesn't change with where they are.
+    if (!this.endsNow(name)) return false;
     if (moved || wasOnline !== seen.online) {
       this.rebuild(name);
       return true;
@@ -143,7 +153,7 @@ export class TrailLayer {
 
   rebuild(name) {
     const trail = this.trails.get(name);
-    const seen = this.seen.get(name);
+    const seen = trail.until === null ? this.seen.get(name) : null;
     const head = seen?.online && seen.position ? { ...seen.position, t: this.now() } : null;
     const points = mergeTrail(trail.history, seen?.buffer || [], head, trail.asOf);
     trail.model = buildTrailModel(points, { step: trail.step });
@@ -191,7 +201,7 @@ export class TrailLayer {
     for (const [name, trail] of this.trails) {
       const { model } = trail;
       if (model.tMin === null) continue;
-      const end = this.isOnline(name) ? Math.max(model.tMax, this.now()) : model.tMax;
+      const end = this.endsNow(name) && this.isOnline(name) ? Math.max(model.tMax, this.now()) : model.tMax;
       tMin = tMin === null ? model.tMin : Math.min(tMin, model.tMin);
       tMax = tMax === null ? end : Math.max(tMax, end);
       for (const tick of timelineTicks(model, this.shownMarksOn(name))) {
@@ -273,7 +283,7 @@ export class TrailLayer {
       const geometry = this.geometryOf(trail, lod);
       const mode =
         this.replayTime === null
-          ? { kind: "live", windowS: trail.windowS }
+          ? { kind: "live", windowS: trail.windowS, endS: trail.until }
           : { kind: "replay", time: this.replayTime, hop: this.hopOn(name, geometry) };
       const drawn = drawTrail(
         ctx,
@@ -284,7 +294,7 @@ export class TrailLayer {
           color: trail.color,
           light: trail.light,
           selected: name === selectedName,
-          online: this.isOnline(name),
+          online: this.endsNow(name) && this.isOnline(name),
           hover: this.hover?.name === name ? this.hover.point : null,
         },
         mode,
