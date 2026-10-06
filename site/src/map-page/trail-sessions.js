@@ -24,12 +24,25 @@ function dayName(time, nowMs) {
 }
 
 /**
+ * "Today 14:10 to 16:32, 2h 22m": when a session that is over was, and how
+ * long. One of a day or longer names the day it ended on as well: without it
+ * "2 Oct 22:28 to 23:24, 3d 0h" reads as an hour of one evening.
+ */
+function sessionLabel(start, end, nowMs) {
+  const ended = end - start >= DAY_MS ? `${dayName(end, nowMs)} ${clockTime(end)}` : clockTime(end);
+  return `${dayName(start, nowMs)} ${clockTime(start)} to ${ended}, ${formatDuration(end - start)}`;
+}
+
+/**
  * A player's sessions (as /hub/players/.../sessions gives them, newest first)
  * as choices for the length of the trails: `[{value, label, start, from,
  * to}]`. `start` is when the session began (ms), which names it for as long
- * as it is listed; `from` and `to` are the span to ask for.
+ * as it is listed; `from` and `to` are the span to ask for. The newest twelve
+ * are listed, and after them the one that was picked (`picked`, its `start`)
+ * when it is older than those: it only goes when it is no session to ask
+ * for any more.
  */
-export function sessionOptions(sessions, nowMs = Date.now()) {
+export function sessionOptions(sessions, nowMs = Date.now(), picked = null) {
   return (sessions || [])
     .map((session) => {
       const start = new Date(session.started_at).getTime();
@@ -38,13 +51,10 @@ export function sessionOptions(sessions, nowMs = Date.now()) {
     })
     .filter(({ start, end }) => !isNaN(start) && (end === null || end - start >= SESSION_MIN_MS))
     .filter(({ start, end }) => (end ?? nowMs) - start <= SESSION_MAX_MS)
-    .slice(0, SESSIONS_SHOWN)
+    .filter(({ start }, index) => index < SESSIONS_SHOWN || start === picked)
     .map(({ start, end }) => ({
       value: `session:${start}`,
-      label:
-        end === null
-          ? `Now, since ${clockTime(start)}`
-          : `${dayName(start, nowMs)} ${clockTime(start)} to ${clockTime(end)}, ${formatDuration(end - start)}`,
+      label: end === null ? `Now, since ${clockTime(start)}` : sessionLabel(start, end, nowMs),
       start,
       from: Math.floor(start / 1000) - SESSION_PAD_S,
       to: end === null ? null : Math.ceil(end / 1000) + SESSION_PAD_S,

@@ -41,7 +41,7 @@ of Group Ironman teams:
   follows the tiles the player walked; of a busy player it shows the newest part and says since when. It
   ends on the player's marker and grows as they move, fading with age. Below the two lengths the menu
   lists the play sessions of the last 7 days (the newest twelve) of the selected player, or of the first
-  trail's when the selected one has no trail on: pick one and every trail on the map shows that time
+  trail's when the selected one has no trail on the map: pick one and every trail there shows that time
   only, which is how to look back at one evening without the week around it. A session that is over
   ends where the player was then, not on their marker. Teleports are drawn as arcs,
   boat trips as waves, and parts on another floor faintly. The player's events are marked along it,

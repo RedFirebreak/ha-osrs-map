@@ -46,13 +46,15 @@ const TRAIL_START_TIME_MS = 2 * 86400 * 1000;
 
 /**
  * When a trail (as the server sends it) starts: "26 Sep", and "5 Oct 14:10"
- * when that is so lately that the day alone says little.
+ * when that is so lately that the day alone says little. Of a trail over a
+ * play session (`ofSession`) the day alone never says much, however long ago:
+ * it is the day the session was on.
  */
-function trailStart(trail) {
+function trailStart(trail, ofSession) {
   const [, , , time, dwell = 0] = trail.points[0];
   const start = (time - dwell) * 1000;
   const day = shortDay(start);
-  return Date.now() - start < TRAIL_START_TIME_MS ? `${day} ${clockTime(start)}` : day;
+  return ofSession || Date.now() - start < TRAIL_START_TIME_MS ? `${day} ${clockTime(start)}` : day;
 }
 
 /** The trail length chosen last time, when the select still offers it; else its first. */
@@ -65,7 +67,10 @@ export class MapPage extends BaseElement {
   constructor() {
     super();
     this.filters = loadEventFilters();
+    // The trails as the server last gave them, and whether that was over a
+    // play session and not a number of days.
     this.trailData = new Map();
+    this.trailDataOfSession = false;
     this.trailEvents = new Map();
     this.liveEvents = [];
     // The sessions in the menu (see sessionOptions), whose they are and when
@@ -74,6 +79,9 @@ export class MapPage extends BaseElement {
     this.sessionsOf = null;
     this.sessionsAt = 0;
     this.pickedSession = null;
+    // Whose sessions the menu has, or is getting: the last player they were
+    // asked for (see loadSessions).
+    this.sessionsWanted = null;
   }
 
   html() {
@@ -206,32 +214,41 @@ export class MapPage extends BaseElement {
   }
 
   /**
-   * Whose sessions the menu offers: the player the replay watches (the
-   * selected one when their trail is on, else the first), or whoever the
-   * session that was picked belongs to.
+   * Whose sessions the menu offers: whoever the session that was picked
+   * belongs to, else the player the replay watches, picked as the map picks
+   * them (CanvasMap.replayPlayer): the selected one when their trail is on
+   * the map, else the first on it. A trail the hub doesn't share is not on
+   * the map, so its player is not the one. Until the first trail is on the
+   * map nobody is watched yet, and it goes by the trails that are asked for.
    */
   sessionOwner() {
-    const names = [...selection.trails];
-    if (this.pickedSession && names.includes(this.pickedSession.member)) return this.pickedSession.member;
+    const asked = [...selection.trails];
+    if (this.pickedSession && asked.includes(this.pickedSession.member)) return this.pickedSession.member;
+    // A trail that was just switched off may still be on the map for a moment.
+    const drawn = this.worldMap.trailNames().filter((name) => selection.hasTrail(name));
+    const names = drawn.length ? drawn : asked;
     return names.includes(selection.selected) ? selection.selected : names[0] || null;
   }
 
   /**
    * Brings the sessions in the menu up to date, and with them the session
    * that was picked: it may have ended meanwhile, or be too long ago by now.
+   * An answer that is still under way for another player than the one the
+   * menu is for by then is dropped.
    */
   async loadSessions() {
     const owner = this.historyEnabled === false ? null : this.sessionOwner();
+    this.sessionsWanted = owner;
+    // Whatever is still under way was asked before this, maybe for another player.
+    const requestId = (this.sessionsRequestId = (this.sessionsRequestId || 0) + 1);
     if (!owner) {
-      this.sessionsRequestId = (this.sessionsRequestId || 0) + 1;
       this.showSessions(null, []);
       return;
     }
     if (owner === this.sessionsOf && Date.now() - this.sessionsAt < SESSIONS_REFRESH_MS) return;
-    const requestId = (this.sessionsRequestId = (this.sessionsRequestId || 0) + 1);
-    let choices = [];
+    let sessions = [];
     try {
-      choices = sessionOptions((await api.getPlayerSessions(owner, SESSIONS_DAYS)).sessions);
+      sessions = (await api.getPlayerSessions(owner, SESSIONS_DAYS)).sessions;
     } catch (error) {
       // Not shared is an answer: no sessions to offer. Anything else (the hub
       // is busy) leaves the ones that are there until the next time.
@@ -240,6 +257,8 @@ export class MapPage extends BaseElement {
     if (!this.isConnected || requestId !== this.sessionsRequestId) return;
     this.sessionsAt = Date.now();
     const picked = this.pickedSession;
+    // The session that was picked stays in the list, however many came after it.
+    const choices = sessionOptions(sessions, Date.now(), picked && picked.member === owner ? picked.start : null);
     const now = picked && picked.member === owner ? choices.find((choice) => choice.start === picked.start) : null;
     if (picked && picked.member === owner && !now) {
       this.showSessions(owner, choices);
@@ -323,6 +342,7 @@ export class MapPage extends BaseElement {
       const data = await api.getTrails(names, span);
       if (!this.isConnected || requestId !== this.trailRequestId) return;
       this.trailData = new Map(data.trails.map((trail) => [trail.member, trail]));
+      this.trailDataOfSession = typeof span !== "number";
       const { windowS, until, from } = spanWindow(span, Math.floor(Date.now() / 1000));
       for (const trail of data.trails) {
         if (trail.shared) {
@@ -332,6 +352,9 @@ export class MapPage extends BaseElement {
           this.worldMap.clearTrail(trail.member);
         }
       }
+      // Other trails may be on the map now, and the replay may watch another
+      // player than the one whose sessions the menu has or is getting.
+      if (this.sessionOwner() !== this.sessionsWanted) this.loadSessions();
       this.trailFailures = 0;
       this.trailError = staleNotice(data.as_of);
       this.showTrailEvents();
@@ -369,14 +392,18 @@ export class MapPage extends BaseElement {
         // Noted before the answer, so a slow one isn't asked for twice.
         const known = this.trailEvents.get(name)?.events || [];
         this.trailEvents.set(name, { events: known, at: now, span: key, minLoot });
+        // The trails may show another time by the time the answer is in. It is
+        // dropped then, and the player is still due: what is noted for them is
+        // for the time before, unless the new time was asked for meanwhile.
+        const wanted = () => this.trailEvents.has(name) && spanKey(this.trailSpan()) === key;
         try {
           const events = await api.getTrailEvents(name, span, minLoot);
-          if (this.trailEvents.has(name)) this.trailEvents.set(name, { events, at: now, span: key, minLoot });
+          if (wanted()) this.trailEvents.set(name, { events, at: now, span: key, minLoot });
         } catch (error) {
           // The trail is shown with what the live feed has. Not shared is an
           // answer; anything else (the hub is busy) is asked again with the
           // next refresh of the trails.
-          if (error.status !== 404 && this.trailEvents.has(name)) {
+          if (error.status !== 404 && wanted()) {
             this.trailEvents.set(name, { events: known, at: 0, span: key, minLoot });
           }
         }
@@ -415,7 +442,7 @@ export class MapPage extends BaseElement {
         const notShared = trail && !trail.shared;
         const empty = trail?.shared && trail.points.length === 0;
         // The server cuts a trail with more than it can send down to its newest part.
-        const since = trail?.shared && trail.truncated && !empty ? trailStart(trail) : null;
+        const since = trail?.shared && trail.truncated && !empty ? trailStart(trail, this.trailDataOfSession) : null;
         const note = notShared ? " (not shared)" : empty ? " (no points)" : since ? ` (since ${since})` : "";
         chip.textContent = `${name}${note}`;
         chip.classList.toggle("map-page__trail-chip--off", Boolean(notShared || empty));
