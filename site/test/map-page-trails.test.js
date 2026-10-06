@@ -167,9 +167,36 @@ describe("map page trails", () => {
       light,
       windowS: 86400,
       until: null,
-      from: null,
+      from: NOW_S - 86400,
     });
     expect(page.querySelector('[data-name="Bob"]').textContent).toContain("not shared");
+  });
+
+  it("draws nothing of what was seen of a player longer ago than the trails go back", async () => {
+    // The map's own trails behind the stand-in for the map, on a clock of their own.
+    let seenAt = NOW_S - 30 * 3600;
+    const layer = new TrailLayer({ now: () => seenAt });
+    worldMap.setTrail = vi.fn((name, trail, style) => layer.setHistory(name, trail, style));
+    worldMap.clearTrail = vi.fn((name) => layer.remove(name));
+    worldMap.trailNames = () => layer.names();
+    // Bob walked about thirty hours ago, in a tab that has been open since, and logged out.
+    for (const x of [3230, 3240, 3250]) {
+      layer.observe("Bob", { x, y: 3201, plane: 0 }, true);
+      seenAt += 60;
+    }
+    layer.observe("Bob", { x: 3250, y: 3201, plane: 0 }, false);
+    seenAt = NOW_S;
+
+    // The hub has nothing of Bob in the last 24 hours.
+    vi.spyOn(api, "getTrails").mockResolvedValue({
+      ...trailsResponse(["Bob"]),
+      trails: [{ member: "Bob", shared: true, step: 60, points: [] }],
+    });
+    mount();
+    selection.toggleTrail("Bob");
+    await settle();
+    expect(page.querySelector('[data-name="Bob"]').textContent).toBe("Bob (no points)");
+    expect(layer.modelOf("Bob").points).toEqual([]);
   });
 
   it("doesn't ask for trails while the server has the hub's history switched off", async () => {
@@ -310,6 +337,29 @@ describe("map page trails", () => {
       expect(api.getTrailEvents).toHaveBeenLastCalledWith("Alice", 1, 0);
       // What was fetched with every drop in it serves any filter.
       await choose("1000000");
+      expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
+    });
+
+    it("of the drops that are shown stay when an answer for bigger drops only comes in after them", async () => {
+      // The first answer, for drops of 100K and up, takes its time.
+      const slow = deferred();
+      api.getTrailEvents.mockImplementationOnce(() => slow.promise);
+      api.getTrailEvents.mockResolvedValue([event("small", "Alice", 400, { type: "loot" }), event("a", "Alice", 300)]);
+      mount();
+      selection.toggleTrail("Alice");
+      await settle();
+      const minLoot = page.querySelector(".map-page__event-min-loot");
+      minLoot.value = "0";
+      minLoot.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle();
+      expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
+      expect(marked("Alice")).toEqual(["small", "a"]);
+
+      slow.resolve([event("a", "Alice", 300)]);
+      await settle();
+      expect(marked("Alice")).toEqual(["small", "a"]);
+      // Every drop is in hand: nothing to ask again with the next refresh.
+      await vi.advanceTimersByTimeAsync(60000);
       expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
     });
 

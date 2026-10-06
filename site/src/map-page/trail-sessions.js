@@ -34,6 +34,16 @@ function sessionLabel(start, end, nowMs) {
 }
 
 /**
+ * "Now, since 19:05": a session that still goes on. One that began before
+ * today names the day too: "Now, since yesterday 23:42".
+ */
+function openSessionLabel(start, nowMs) {
+  const day = dayName(start, nowMs);
+  if (day === "Today") return `Now, since ${clockTime(start)}`;
+  return `Now, since ${day === "Yesterday" ? "yesterday" : day} ${clockTime(start)}`;
+}
+
+/**
  * A player's sessions (as /hub/players/.../sessions gives them, newest first)
  * as choices for the length of the trails: `[{value, label, start, from,
  * to}]`. `start` is when the session began (ms), which names it for as long
@@ -54,7 +64,7 @@ export function sessionOptions(sessions, nowMs = Date.now(), picked = null) {
     .filter(({ start }, index) => index < SESSIONS_SHOWN || start === picked)
     .map(({ start, end }) => ({
       value: `session:${start}`,
-      label: end === null ? `Now, since ${clockTime(start)}` : sessionLabel(start, end, nowMs),
+      label: end === null ? openSessionLabel(start, nowMs) : sessionLabel(start, end, nowMs),
       start,
       from: Math.floor(start / 1000) - SESSION_PAD_S,
       to: end === null ? null : Math.ceil(end / 1000) + SESSION_PAD_S,
@@ -69,9 +79,9 @@ export function spanKey(span) {
 /**
  * How a trail over a span is drawn: `windowS`, how long the span is at
  * `nowS`; `until`, when it ended (null: it runs until now); and `from`, when
- * it began (null for a number of days, which slides along with now).
+ * it began (for a number of days: that long before `nowS`).
  */
 export function spanWindow(span, nowS) {
-  if (typeof span === "number") return { windowS: span * 86400, until: null, from: null };
+  if (typeof span === "number") return { windowS: span * 86400, until: null, from: nowS - span * 86400 };
   return { windowS: (span.to ?? nowS) - span.from, until: span.to ?? null, from: span.from };
 }

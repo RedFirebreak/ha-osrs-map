@@ -270,11 +270,11 @@ export function observeLive(
  * a marker that is itself behind the history is left out: the hub has the
  * player further on, and the marker follows within seconds.
  *
- * `from` is when the span of the trail began, when it was asked for from a
- * moment (a play session that still goes on) and not in days. What was seen
- * before then is no part of it, also when the hub has no point in the span:
- * the live points go back as far as the tab has been open. A sighting that
- * lasted into the span begins where the span does.
+ * `from` is when the span of the trail began: a play session that still goes
+ * on, or a number of days before now. What was seen before then is no part
+ * of it, also when the hub has no point in the span: the live points go back
+ * as far as the tab has been open. A sighting that lasted into the span
+ * begins where the span does.
  */
 export function mergeTrail(history, live, head, asOf, from = null) {
   const merged = history.slice();

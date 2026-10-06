@@ -391,11 +391,14 @@ export class MapPage extends BaseElement {
       due.map(async (name) => {
         // Noted before the answer, so a slow one isn't asked for twice.
         const known = this.trailEvents.get(name)?.events || [];
-        this.trailEvents.set(name, { events: known, at: now, span: key, minLoot });
+        const noted = { events: known, at: now, span: key, minLoot };
+        this.trailEvents.set(name, noted);
         // The trails may show another time by the time the answer is in. It is
         // dropped then, and the player is still due: what is noted for them is
-        // for the time before, unless the new time was asked for meanwhile.
-        const wanted = () => this.trailEvents.has(name) && spanKey(this.trailSpan()) === key;
+        // for the time before, unless the new time was asked for meanwhile. So
+        // is an answer that was asked for again meanwhile, for smaller drops:
+        // the answer to keep is the one to what was asked last.
+        const wanted = () => this.trailEvents.get(name) === noted && spanKey(this.trailSpan()) === key;
         try {
           const events = await api.getTrailEvents(name, span, minLoot);
           if (wanted()) this.trailEvents.set(name, { events, at: now, span: key, minLoot });

@@ -54,6 +54,15 @@ describe("sessionOptions", () => {
     ]);
   });
 
+  it("says the day a session that still goes on began, unless that is today", () => {
+    const labels = (sessions) => sessionOptions(sessions, NOW).map((option) => option.label);
+    expect(labels([session(at(5, 19, 5), null)])).toEqual([`Now, since ${clock(at(5, 19, 5))}`]);
+    expect(labels([session(at(4, 23, 42), null)])).toEqual([`Now, since yesterday ${clock(at(4, 23, 42))}`]);
+    expect(labels([session(at(2, 22, 28), null)])).toEqual([
+      `Now, since ${day(at(2, 22, 28))} ${clock(at(2, 22, 28))}`,
+    ]);
+  });
+
   it("gives a session a minute on both sides, and no end while it goes on", () => {
     const [open, over] = sessionOptions([session(at(5, 19, 5), null), session(at(5, 14, 10), at(5, 16, 32))], NOW);
     expect(open).toMatchObject({ from: at(5, 19, 5).getTime() / 1000 - 60, to: null });
@@ -117,8 +126,9 @@ describe("a span of trail", () => {
   });
 
   it("knows how long it is, whether it ends before now and when it began", () => {
-    // A number of days slides along with now: it has no moment at which it began.
-    expect(spanWindow(7, 1000)).toEqual({ windowS: 7 * 86400, until: null, from: null });
+    // A number of days ends now, and began that many days before now.
+    const now = 1_790_000_000;
+    expect(spanWindow(7, now)).toEqual({ windowS: 7 * 86400, until: null, from: now - 7 * 86400 });
     expect(spanWindow({ from: 100, to: 700 }, 1000)).toEqual({ windowS: 600, until: 700, from: 100 });
     expect(spanWindow({ from: 100, to: null }, 1000)).toEqual({ windowS: 900, until: null, from: 100 });
   });

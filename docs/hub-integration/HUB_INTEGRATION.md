@@ -79,9 +79,10 @@ backend sends that time with every trail (`as_of`, by its own clock, which also 
 sees), and the site adds only what it saw from then on. The times of the hub's points can't decide
 this: they are the plugin's clock, and the newest of them can be a minute older than the message it
 came in. For a few seconds after a read the trail can be ahead of the marker; it then ends where
-the hub has the player, not on the marker. A trail over a session that still goes on gets nothing
-the site saw before the session began, also when the hub has no point of the player in it: what a
-browser tab has seen of a player goes back for as long as it has been open.
+the hub has the player, not on the marker. A trail gets nothing the site saw before its time
+began (a session that still goes on, or the 24 hours or 7 days before now), also when the hub has
+no point of the player in it: what a browser tab has seen of a player goes back for as long as it
+has been open.
 
 **Labels and thinning.** A label belongs to two points as the hub returned them, so it is read
 before anything is removed. Consecutive points on one tile become a stay, which keeps the label of
