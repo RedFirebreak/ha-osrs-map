@@ -60,6 +60,28 @@ function request(port, urlPath, { method = "GET", headers = {}, body } = {}) {
   });
 }
 
+// A backend that answers the first request on a connection and drops the connection, unanswered, when
+// another one comes in on it. That is what the real backend's idle timeout looks like when it fires
+// just as a request is sent: it closes a connection that nothing came in on for five seconds.
+function startBackendThatDropsReusedConnections() {
+  const body = '{"members":[]}';
+  const server = net.createServer((socket) => {
+    let seen = "";
+    let answered = false;
+    socket.on("error", () => {});
+    socket.on("data", (chunk) => {
+      if (answered) return socket.destroy();
+      seen += chunk;
+      if (!seen.includes("\r\n\r\n")) return;
+      answered = true;
+      socket.write(
+        `HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\n\r\n${body}`,
+      );
+    });
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
+}
+
 beforeAll(async () => {
   // public/index.html is build output. Without a build (CI runs the tests first) a stand-in does.
   if (!fs.existsSync(indexHtml)) {
@@ -163,6 +185,23 @@ describe("site server", () => {
     expect(res.status).toBe(403);
     expect(res.text).toBe("not a member");
   });
+
+  it("answers every API request when the backend drops a connection it has answered on", async () => {
+    const dropping = await startBackendThatDropsReusedConnections();
+    const port = await freePort();
+    const behind = await startSite(port, `http://127.0.0.1:${dropping.address().port}`);
+    try {
+      const statuses = [];
+      for (let i = 0; i < 3; i++) statuses.push((await request(port, "/api/members")).status);
+
+      expect(statuses).toEqual([200, 200, 200]);
+    } finally {
+      const exited = new Promise((resolve) => behind.once("exit", resolve));
+      behind.kill();
+      await exited;
+      await new Promise((resolve) => dropping.close(resolve));
+    }
+  }, 30000);
 
   it("stops with an error when its port is taken, instead of saying it listens", async () => {
     const second = startSite(sitePort, "http://127.0.0.1:1");
