@@ -37,8 +37,10 @@ player was when it arrived.
 `categories`, `skills.total_level`/`overall_xp`, `inventory.value`/`equipment.value`, `spellbook`,
 `game_state` and `location.is_on_boat`.
 
-Presence comes from `online` and `last_seen`. `game_state` is shown as a detail only: the hub doesn't
-clear it when an account times out.
+Presence comes from `online` and `last_seen`. `game_state` is shown as a detail only, next to a
+player who is online ("Hopping worlds"). The hub sends `null` for it once an in-game state timed out
+(`online` turned false without a logout: a crashed client), so it never says `LOGGED_IN` for a
+player who is offline (D-94).
 
 ## Trails
 
@@ -139,13 +141,17 @@ pick, and their trail is still there in days.
 entrance, 3 house, 4 teleport, 5 gap, 6 instance, 7 a label this server doesn't know, and 0 (left
 out) when the hub didn't say. The site takes a number it doesn't know for 7. The dev stack's checks
 (`osrs-dev-stack`) read these numbers too: a new label gets a new number, and none of them changes.
-The response has `"v": 3`. Times are whole seconds.
+The response has `"v": 3`. Times are whole seconds, except each trail's own `as_of`, which is to the
+millisecond: the site holds it against the moment it saw a marker move. The answer's `as_of`, of the
+trail the hub gave longest ago, is in whole seconds.
 
 ## Categories
 
-A player who hasn't changed the hub's defaults shares `stats`, `events`, `activity` and `location_live`
-with the guild. `inventory`, `equipment` and `location_history` are private by default, so their profile
-tabs and trails show "not shared". The map reads `categories` to tell "not shared" from "empty".
+The hub shares every category with the guild by default (D-96). An account the hub knew before a
+category got that default keeps it private until its owner shares it: `location_live` from before
+D-82, and `inventory`, `equipment` and `location_history` from before D-96. Such a player has no
+marker, or profile tabs and a trail that show "not shared". The map reads `categories` to tell "not
+shared" from "empty".
 
 What the key may not read, the map doesn't hold. A field the hub leaves out because its category is
 off the account's `categories` empties what the map stored for it, in the database and in
