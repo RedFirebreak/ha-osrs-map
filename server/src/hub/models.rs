@@ -204,7 +204,8 @@ pub(crate) struct HubXpLine {
 }
 
 /// How a player got to a point of their trail from the one before it in the
-/// hub's answer (hub D-103). Only `Move` was walked, run or sailed.
+/// hub's answer (hub D-103). Only `Move` is a line on the map: walked, run or
+/// sailed, with coordinates that follow each other.
 #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum HubVia {
@@ -214,10 +215,14 @@ pub(crate) enum HubVia {
     /// From one room of a player-owned house to the next: walked, but the
     /// coordinates jump.
     House,
+    /// The same between two rooms of the Gauntlet, the Corrupted Gauntlet or
+    /// the Chambers of Xeric, which the game also builds from copied rooms.
+    Instance,
     Teleport,
     /// More than five minutes since the point before.
     Gap,
-    /// A label from a newer hub than this server knows.
+    /// A label from a newer hub than this server knows. The hub's API says to
+    /// take such a step as not walked.
     #[serde(other)]
     Other,
 }

@@ -10,7 +10,8 @@ import { clockTime, shortDay } from "../data/format";
 //
 // A point is `{x, y, plane, t0, t1, boat, world, via?, live?}`: the player was
 // on the tile from t0 to t1. `via` is how the hub says they got there from the
-// point before (move, entrance, house, teleport or gap; hub D-103).
+// point before (move, entrance, house, instance, teleport or gap; hub D-103),
+// or "other" for a label that the server or this site doesn't know.
 // The step from one point to the next is one of:
 //   walk      on foot
 //   stairs    the same, to another floor
@@ -18,12 +19,17 @@ import { clockTime, shortDay } from "../data/format";
 //   entrance  into or out of the underground, which the game puts 6400 tiles north
 //   house     into the next room of a player-owned house: walked, but the
 //             rooms lie apart on the map
+//   instance  the same between two rooms of a raid (the Gauntlet, the
+//             Chambers of Xeric), which the game also builds from copied rooms
 //   teleport  anything else that wasn't walked
-//   unknown   a gap in the data
+//   unknown   a gap in the data, or a label nobody knows: not walked, and
+//             nothing more is known about it
 // The hub's label decides. A point without one (seen live between two polls,
 // or from a hub that doesn't say) is judged by distance and time, where
 // teleport is "further than anyone could have run, or to another part of the
-// map" and unknown also "far enough that it may have been either".
+// map" and unknown also "far enough that it may have been either". A label
+// that isn't known is never judged that way: the hub's API says to take such
+// a step for not walked, and a guess could draw it as a line.
 
 const TICK_S = 0.6;
 
@@ -57,8 +63,11 @@ const LIVE_MAX_AGE_S = 3600;
 // 5 s and the site the backend every 2 s. The rest is for a plugin's clock,
 // which dates the hub's points, being behind the server's.
 const MARKER_LAG_S = 15;
-// The server's codes for the hub's labels; 0 is "the hub didn't say".
-const VIA = [undefined, "move", "entrance", "house", "teleport", "gap"];
+// The server's codes for the hub's labels (`via_code` in its trails.rs): 0 is
+// "the hub didn't say", 7 a label of the hub's that the server doesn't know.
+const VIA = [undefined, "move", "entrance", "house", "teleport", "gap", "instance", "other"];
+// A code this site doesn't know is a label it doesn't know.
+const VIA_NOT_KNOWN = "other";
 
 /**
  * Reads a trail as the server sends it: `{step, as_of, points, worlds}` with
@@ -84,7 +93,7 @@ export function decodeTrail(raw) {
       return;
     }
     const point = { ...coordinates, t0: time - dwell, t1: time, boat: Boolean(flags & FLAG_BOAT), world };
-    if (VIA[via]) point.via = VIA[via];
+    if (via) point.via = VIA[via] ?? VIA_NOT_KNOWN;
     points.push(point);
   });
   return { points, step: (!Array.isArray(raw) && raw?.step) || IDLE_S, asOf: raw?.as_of ?? undefined };
@@ -123,9 +132,11 @@ export function classifyStep(a, b, gapS = GAP_S) {
       return moveKind(a, b);
     case "entrance":
     case "house":
+    case "instance":
     case "teleport":
       return b.via;
     case "gap":
+    case "other":
       return "unknown";
   }
   const elapsed = Math.max(b.t0 - a.t1, 1);
@@ -147,6 +158,16 @@ export function classifyStep(a, b, gapS = GAP_S) {
 }
 
 const CONNECTED = new Set(["walk", "stairs", "sail"]);
+
+/**
+ * Whether a step is a walk into the next room of something the game builds
+ * from copied rooms, a player-owned house or a raid. The player walked, but
+ * the two ends lie apart on the map: there is no line to draw between them,
+ * nothing for a replay to stop for and nothing to mark on its timeline.
+ */
+export function isNextRoom(kind) {
+  return kind === "house" || kind === "instance";
+}
 
 /**
  * Classifies every step of a trail. `runs` are the stretches drawn as one

@@ -45,9 +45,11 @@ hub's answer (`via`, D-103), so the map doesn't guess teleports:
 | `move` | A line: a walk, stairs when the floor differs, a sail when both points are on a boat |
 | `entrance` | A ring at both ends, no line |
 | `house` | The next room of a player-owned house: no line and no arc, a small house where the player came in. The replay doesn't hold there and the timeline has no tick for it |
+| `instance` | The next room of the Gauntlet, the Corrupted Gauntlet or the Chambers of Xeric, which the game builds from copied rooms as it does a house. The same as `house`, with a small square where the player came in instead of the house |
 | `teleport` | A dashed arc with a burst at both ends; a stub at each end when the other end is on another part of the map. The replay stops for it and plays it out |
 | `gap` | A dotted link: nothing is known about what happened |
-| none | The first point of an answer, a label this server doesn't know, or a hub from before D-103. The map then guesses from distance and time, as it does for the positions it sees live between two reads of the trail |
+| a label this server doesn't know | Not walked, which is what the hub's API asks for a label it adds later: the dotted link of a `gap`. The map never guesses for it, because a guess can come out as a walked line |
+| none | The first point of an answer, or a hub from before D-103. The map then guesses from distance and time, as it does for the positions it sees live between two reads of the trail |
 
 **Reading.** An answer holds the newest 20,000 points and says `truncated` when older ones were
 left out, so the backend reads a trail in two parts (`server/src/hub/trails.rs`):
@@ -126,8 +128,10 @@ is `location_history`: a player who shares their trail but not their activity ha
 pick, and their trail is still there in days.
 
 **To the site.** A point is `[x, y, plane, unix seconds, dwell, flags, via]` with `via` 1 move, 2
-entrance, 3 house, 4 teleport, 5 gap and 0 (left out) when the hub didn't say. The response has
-`"v": 3`. Times are whole seconds.
+entrance, 3 house, 4 teleport, 5 gap, 6 instance, 7 a label this server doesn't know, and 0 (left
+out) when the hub didn't say. The site takes a number it doesn't know for 7. The dev stack's checks
+(`osrs-dev-stack`) read these numbers too: a new label gets a new number, and none of them changes.
+The response has `"v": 3`. Times are whole seconds.
 
 ## Categories
 

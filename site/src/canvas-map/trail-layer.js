@@ -1,6 +1,7 @@
 import {
   buildTrailModel,
   decodeTrail,
+  isNextRoom,
   mergeTrail,
   nextChangeAfter,
   observeLive,
@@ -229,14 +230,14 @@ export class TrailLayer {
    * Where a player next turns up somewhere else, landing after `from` and up
    * to `to`: `{leave, land, kind}`, when they left, when they landed, and
    * whether it was a teleport, an entrance or a jump that can't be explained
-   * ("unknown"). The next room of their house isn't somewhere else. Null when
-   * they don't in that span, or have no trail.
+   * ("unknown"). The next room of their house, or of a raid, isn't somewhere
+   * else. Null when they don't in that span, or have no trail.
    */
   nextHop(name, from, to) {
     const model = this.modelOf(name);
     if (!model) return null;
     for (const jump of model.jumps) {
-      if (jump.kind === "house") continue;
+      if (isNextRoom(jump.kind)) continue;
       const land = model.points[jump.from + 1].t0;
       if (land > to) return null;
       if (land > from) return { leave: model.points[jump.from].t1, land, kind: jump.kind };

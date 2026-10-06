@@ -330,6 +330,41 @@ describe("TrailLayer", () => {
     expect(layer.nextHop("Bob", T - 540, T)).toMatchObject({ land: T - 420, kind: "teleport" });
   });
 
+  it("doesn't count the next room of a raid as a hop, nor as a tick on the timeline", () => {
+    layer.setHistory(
+      "Bob",
+      {
+        step: 60,
+        points: [
+          [3030, 6120, 0, T - 600],
+          [1860, 5640, 0, T - 540, 0, 0, 4],
+          [1910, 5690, 0, T - 480, 0, 0, 6],
+          [3030, 6120, 0, T - 420, 0, 0, 4],
+        ],
+      },
+      COLORS,
+    );
+    expect(layer.modelOf("Bob").kinds).toEqual(["teleport", "instance", "teleport"]);
+    expect(layer.nextHop("Bob", T - 540, T)).toMatchObject({ land: T - 420, kind: "teleport" });
+    expect(layer.timeline().ticks.map((tick) => tick.t)).toEqual([T - 540, T - 420]);
+  });
+
+  it("holds the replay for a step with a label nobody knows, as for any jump it can't explain", () => {
+    layer.setHistory(
+      "Bob",
+      {
+        step: 60,
+        points: [
+          [3000, 3000, 0, T - 600],
+          [3003, 3000, 0, T - 540, 0, 0, 7],
+        ],
+      },
+      COLORS,
+    );
+    expect(layer.modelOf("Bob").kinds).toEqual(["unknown"]);
+    expect(layer.nextHop("Bob", T - 600, T)).toEqual({ leave: T - 600, land: T - 540, kind: "unknown" });
+  });
+
   describe("while a teleport is played out", () => {
     const hop = (progress, name = "Bob") => ({ name, leave: T - 600, land: T - 540, progress });
 

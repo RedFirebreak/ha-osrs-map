@@ -183,6 +183,40 @@ describe("drawTrail, live", () => {
     expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(8);
   });
 
+  it("marks the room of a raid the player walked into with a plain square, not a house", () => {
+    const ctx = recordingContext();
+    const points = [at(1860, 5640, 2), at(1863, 5640, 1, { via: "move" }), at(1871, 5648, 0, { via: "instance" })];
+    const trail = trailOf(points);
+    expect(trail.model.kinds).toEqual(["walk", "instance"]);
+    drawTrail(ctx, viewOf(1865, 5644), trail, LIVE);
+    const [fromX, fromY] = tileCenter(1863, 5640);
+    const [toX, toY] = tileCenter(1871, 5648);
+    const touches = (stroke, x, y) => stroke.path.some(([px, py]) => px === x && py === y);
+    // As for a house: nothing joins the two rooms, no rays and no dashes.
+    expect(ctx.strokes.some((stroke) => touches(stroke, fromX, fromY) && touches(stroke, toX, toY))).toBe(false);
+    expect(ctx.strokes.filter((stroke) => stroke.path.length === 16)).toHaveLength(0);
+    expect(ctx.strokes.filter((stroke) => stroke.dash.length)).toHaveLength(0);
+    // No little house: a raid's room is not one.
+    expect(ctx.strokes.filter((stroke) => stroke.style === LIGHT && stroke.path.length === 5)).toHaveLength(0);
+    // A square above where they came in, as wide as the house is and drawn like it.
+    const marks = ctx.strokes.filter((stroke) => stroke.style === LIGHT && stroke.path.length === 4);
+    expect(marks).toHaveLength(1);
+    const xs = marks[0].path.map(([x]) => x);
+    const ys = marks[0].path.map(([, y]) => y);
+    expect((Math.min(...xs) + Math.max(...xs)) / 2).toBeCloseTo(toX, 5);
+    expect(Math.max(...xs) - Math.min(...xs)).toBe(8);
+    expect(Math.max(...ys) - Math.min(...ys)).toBe(8);
+    expect(Math.max(...ys)).toBeLessThan(toY);
+    expect(new Set(marks[0].path.map(([x, y]) => `${x},${y}`)).size).toBe(4);
+
+    const houseCtx = recordingContext();
+    const rooms = [at(1900, 7050, 2), at(1903, 7050, 1, { via: "move" }), at(1911, 7058, 0, { via: "house" })];
+    drawTrail(houseCtx, viewOf(1905, 7054), trailOf(rooms), LIVE);
+    const [house] = houseCtx.strokes.filter((stroke) => stroke.style === LIGHT && stroke.path.length === 5);
+    expect(marks[0].width).toBe(house.width);
+    expect(marks[0].alpha).toBe(house.alpha);
+  });
+
   it("draws the part on another floor fainter", () => {
     const ctx = recordingContext();
     const points = [

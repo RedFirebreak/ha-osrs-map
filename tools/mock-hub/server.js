@@ -35,6 +35,8 @@
 // sets how far back trails go (default 6; 168 is the week a trail can be).
 const http = require("http");
 const crypto = require("crypto");
+// How a player got from one point of a trail to the next, as the hub says it.
+const { trailStep } = require("./trail-step");
 
 const PORT = parseInt(process.env.PORT || "7070", 10);
 const API_KEY = process.env.MOCK_HUB_KEY || "ohub_mock_key";
@@ -558,21 +560,6 @@ function periodStart(period) {
   const now = new Date();
   if (period === "day") return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).getTime();
   return Date.now() - ({ week: 7, month: 30, year: 365 }[period] || 1) * 86400_000;
-}
-
-// How the hub says a player got from one point of a trail to the next (D-103),
-// after classifyStep in its packages/core/src/trail.ts.
-function trailStep(prev, next) {
-  const elapsed = next.t - prev.t;
-  if (elapsed > 5 * 60_000) return "gap";
-  const speed = prev.boat && next.boat ? 4 : 2;
-  const reach = Math.max(1, Math.ceil(elapsed / TICK_MS)) * speed + 6;
-  const far = (shiftY) => Math.max(Math.abs(next.x - prev.x), Math.abs(next.y - prev.y - shiftY));
-  const inHouse = (p) => p.x >= 1852 && p.x <= 2115 && p.y >= 7036 && p.y <= 7116;
-  if (far(0) <= reach) return "move";
-  if (inHouse(prev) && inHouse(next)) return "house";
-  if (far(6400) <= reach || far(-6400) <= reach) return "entrance";
-  return "teleport";
 }
 
 // Where an account's trail has it at a time, or null while it is logged out.
