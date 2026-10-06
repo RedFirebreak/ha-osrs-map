@@ -107,6 +107,15 @@ describe("event view", () => {
     expect(eventTimeMs({})).toBeNull();
   });
 
+  it("has no place for an event that says it happened inside an instance", () => {
+    // A death in a raid: the plugin sends the instance's own coordinates,
+    // which are nowhere on the map and nowhere near the player's position.
+    expect(eventPlace({ type: "death", location: { x: 12850, y: 4500, plane: 0 } })).toBeNull();
+    expect(eventPlace({ type: "superior_spawn", location: { x: 6400, y: 3200, plane: 1 } })).toBeNull();
+    // The last tile west of where the game keeps its instances is as it was.
+    expect(eventPlace({ location: { x: 6399, y: 3200, plane: 1 } })).toEqual({ x: 6399, y: 3201, plane: 1 });
+  });
+
   describe("tooltip", () => {
     const now = Date.parse("2026-10-01T12:00:00Z");
     const drop = {

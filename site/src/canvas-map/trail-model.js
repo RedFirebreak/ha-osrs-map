@@ -1,6 +1,7 @@
 import { GuildData } from "../data/guild-data";
 import { eventKind, eventPlace, eventTier, eventTimeMs } from "../data/event-view";
 import { clockTime, shortDay } from "../data/format";
+import { inInstanceSpace } from "../data/regions";
 
 // What a player's trail is, apart from how it is drawn: the points the hub
 // has (every tile a player was on, and one a minute while they stand still)
@@ -105,7 +106,7 @@ export function decodeTrail(raw) {
  */
 export function band(x, y) {
   const storedY = y - 1;
-  if (x >= 6400) return "instance";
+  if (inInstanceSpace(x)) return "instance";
   if (storedY < 4224) return "surface";
   if (storedY >= 8448 && storedY < 10624) return "under";
   return "other";

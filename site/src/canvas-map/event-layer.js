@@ -76,15 +76,16 @@ export class EventLayer {
     });
     if (!added.length) return;
     // Where the player was when it happened is only known now: after a reload it would be a guess.
-    const placedByPlayer = added.filter((marker) => !marker.approximate && !marker.event.location);
+    const placedByPlayer = added.filter((marker) => !marker.approximate && !eventPlace(marker.event));
     if (placedByPlayer.length) this.places.remember(placedByPlayer, now);
     this.onChange();
   }
 
   /**
    * Where an event goes on the map, and in which colour: where it says it
-   * happened or where it was put when it did, or else where its player is
-   * now (`known: false`). Null when none of those is known.
+   * happened (see eventPlace: not inside an instance) or where it was put
+   * when it did, or else where its player is now (`known: false`). Null when
+   * none of those is known.
    */
   placeOf(event) {
     const player = this.playerOf(event.member);

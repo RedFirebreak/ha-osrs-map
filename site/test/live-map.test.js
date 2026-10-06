@@ -198,6 +198,14 @@ describe("events on the map", () => {
     expect(map.eventLayer.markers.find("offline")).toBeNull();
   });
 
+  it("are placed where their player is when they say they happened inside an instance", () => {
+    // A death in a raid says where in the instance's own coordinates: no place on the map.
+    const death = drop("raid", 2000, { type: "death", location: { x: 12850, y: 4500, plane: 0 } });
+    map.handleLiveEvents({ events: [], added: [], initial: true });
+    map.handleLiveEvents({ events: [death], added: [death], initial: false });
+    expect(map.eventLayer.markers.find("raid")).toMatchObject({ x: 3000, y: 3001, plane: 0, approximate: false });
+  });
+
   it("are put back without a fuss when the map opens, and ring when they happen", () => {
     map.handleLiveEvents({ events: [drop("old", 5000)], added: [], initial: true });
     expect(map.eventLayer.markers.find("old")).toMatchObject({ arrived: null, approximate: true });
@@ -253,6 +261,17 @@ describe("events on the map", () => {
       expect(fresh.eventLayer.markers.find("a")).toMatchObject({ x: 3000, y: 3001, plane: 0, approximate: false });
       // Put back, not announced.
       expect(fresh.eventLayer.markers.find("a").arrived).toBeNull();
+    });
+
+    it("are back where their player was for one that says it happened inside an instance", () => {
+      const death = drop("raid", 2000, { type: "death", location: { x: 12850, y: 4500, plane: 0 } });
+      map.handleLiveEvents({ events: [], added: [], initial: true });
+      map.handleLiveEvents({ events: [death], added: [death], initial: false });
+
+      vi.setSystemTime(NOW + 5 * MINUTE);
+      const fresh = reloaded();
+      fresh.handleLiveEvents({ events: [death], added: [], initial: true });
+      expect(fresh.eventLayer.markers.find("raid")).toMatchObject({ x: 3000, y: 3001, plane: 0, approximate: false });
     });
 
     it("are where the player is now, as a guess, when this browser never saw them happen", () => {

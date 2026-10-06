@@ -611,6 +611,19 @@ describe("events and the timeline", () => {
     expect(mark).toMatchObject({ x: 3210, y: 3201, approximate: true });
   });
 
+  it("marks a death inside an instance where the trail has the player, not where the instance is kept", () => {
+    // The plugin says where a death happened in the instance's own
+    // coordinates, far east of the map; the trail it sends stays in the world.
+    const location = { x: 12850, y: 4500, plane: 0 };
+    const death = event("raid", 30, { type: "death", location });
+    expect(placeMarks([death], "Alice", model())).toEqual([
+      { id: "raid", event: death, x: 3205, y: 3201, plane: 0, t: T + 30, approximate: false },
+    ]);
+    // A guess, like any other, while the trail can't say where the player was.
+    const [mark] = placeMarks([event("away", 90, { type: "superior_spawn", location })], "Alice", model());
+    expect(mark).toMatchObject({ x: 3210, y: 3201, approximate: true });
+  });
+
   it("leaves out other players, other times and types the map doesn't show", () => {
     const events = [
       event("bob", 30, { member: "Bob" }),

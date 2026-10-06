@@ -23,6 +23,12 @@ for local development.
 | `GET /events?accounts=` | Profile → Activity (a player's recent events) | 30 s |
 | `GET /events?accounts=&from=&to=` | The events marked on a trail, over its length (`to` only for a session that is over): pages of 500, newest first, until `next_cursor` is null or 2000 events. When the map leaves out small drops, drops (`types=loot,pk_loot&min_value=`, from the smallest drop the map shows) are read apart from the other kinds, so a trail costs 2 to 8 requests; with every drop shown it is one read of all kinds, 1 to 4 requests. The site asks once per trail and again every 10 min. A hub from before D-98 ignores `from` and hands back a feed cursor; the backend then keeps that one page | 2 min |
 
+A death's and a superior spawn's own location is where the map puts the event, unless it lies
+inside an instance (x of 6400 or more): there the plugin sends the instance's raw coordinates, not
+the place in the world that a position and a trail give (the hub's gotcha PLUGIN-12), so the event
+goes where one without a location goes, where the trail has the player at that time or where the
+player was when it arrived.
+
 ## Snapshot fields
 
 `id`, `name`, `account_hash` (matching existing members),

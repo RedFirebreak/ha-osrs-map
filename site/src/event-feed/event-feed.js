@@ -137,7 +137,8 @@ export class EventFeed extends BaseElement {
     row.dataset.id = event.id;
     row.dataset.type = event.type;
     row.classList.toggle("event-feed__event--new", this.newIds.has(event.id));
-    row.classList.toggle("event-feed__event--clickable", Boolean(event.location) || !this.playerName);
+    // A click shows where it happened, or in the guild's feed who it happened to.
+    row.classList.toggle("event-feed__event--clickable", Boolean(eventPlace(event)) || !this.playerName);
 
     const iconUrl = eventIconUrl(event);
     const icon = document.createElement("img");

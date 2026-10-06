@@ -4,6 +4,7 @@ import path from "path";
 import {
   groupByRegion,
   groupByWorld,
+  inInstanceSpace,
   regionForMember,
   regionId,
   regionName,
@@ -28,6 +29,14 @@ describe("regions", () => {
     expect(regionName(3100, 3960)).toBe("Wilderness (level 56)");
     expect(regionName(9000, 5000)).toBe("An instance");
     expect(regionName(1000, 1000)).toBeNull();
+  });
+
+  it("knows where the game keeps its instances, of which the map has nothing", () => {
+    expect(inInstanceSpace(6400)).toBe(true);
+    expect(inInstanceSpace(12850)).toBe(true);
+    // The last tile of the world that is on the map.
+    expect(inInstanceSpace(6399)).toBe(false);
+    expect(inInstanceSpace(3222)).toBe(false);
   });
 
   it("starts the wilderness north of the ditch", () => {

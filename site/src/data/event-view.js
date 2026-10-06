@@ -4,6 +4,7 @@ import { skillIconUrl } from "./icons";
 import { describeEvent } from "./hub-format";
 import { remember, remembered } from "./storage";
 import { clockTime, escapeHtml, formatGp, relativeTime } from "./format";
+import { inInstanceSpace } from "./regions";
 
 // How a hub event looks wherever the map shows it: which kind it is, whether
 // the filters let it through, how much of a fuss it deserves, its icon and
@@ -142,10 +143,17 @@ export function eventLabel(event) {
   }
 }
 
-/** Where an event says it happened, in the site's coordinates; null when it doesn't say. */
+/**
+ * Where an event says it happened, in the site's coordinates; null when it
+ * doesn't say, or says so in a way that is no place on the map. A death's and
+ * a superior's location inside an instance is the instance's own coordinates,
+ * where a player's position and trail are the place in the world it was
+ * copied from (hub gotcha PLUGIN-12): the two can't be joined, so such an
+ * event is one that doesn't say where it happened.
+ */
 export function eventPlace(event) {
   const location = event.location;
-  if (!location) return null;
+  if (!location || inInstanceSpace(location.x)) return null;
   return GuildData.transformCoordinatesFromStorage([location.x, location.y, location.plane || 0]);
 }
 
