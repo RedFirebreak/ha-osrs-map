@@ -3,6 +3,8 @@ const winston = require("winston");
 const expressWinston = require("express-winston");
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
 const compression = require("compression");
 const axios = require("axios");
 const app = express();
@@ -90,6 +92,13 @@ app.use(express.static(publicDir));
 
 if (backend) {
   console.log(`Backend for api calls: ${backend}`);
+  // Every request to the backend gets a connection of its own. The backend closes a connection that
+  // nothing came in on for five seconds; a request sent on a kept one in that moment is lost, and the
+  // viewer got a 502 for it.
+  const ownConnection = {
+    httpAgent: new http.Agent({ keepAlive: false }),
+    httpsAgent: new https.Agent({ keepAlive: false }),
+  };
   app.use(express.json());
   app.use("/api", (req, res) => {
     const forwardUrl = backend + req.originalUrl;
@@ -103,6 +112,7 @@ if (backend) {
       responseType: "stream",
       headers,
       data: req.body,
+      ...ownConnection,
     })
       .then((response) => {
         res.status(response.status);
