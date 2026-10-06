@@ -9,6 +9,19 @@ export function regionId(x, y) {
   return ((x >> 6) << 8) | (y >> 6);
 }
 
+// The world ends at this x. East of it the game keeps the areas it makes for
+// one group of players at a time (raids, most bosses).
+const INSTANCE_SPACE_FROM_X = 6400;
+
+/**
+ * Whether a tile's x is in instance space: where an instance really is, as
+ * the game keeps it, and not the place in the world it was copied from. The
+ * map has nothing there, and such a coordinate is no position on it.
+ */
+export function inInstanceSpace(x) {
+  return x >= INSTANCE_SPACE_FROM_X;
+}
+
 /** Sets the names by region id (for tests and after loading). */
 export function setRegionNames(entries) {
   names = new Map(Object.entries(entries).map(([id, name]) => [Number(id), name]));
@@ -75,7 +88,7 @@ export function regionName(x, y) {
   const exact = names.get(id);
   if (exact) return exact;
   // Instanced areas (raids, most bosses) are copied far east of the world.
-  if (x >= 6400) return "An instance";
+  if (inInstanceSpace(x)) return "An instance";
   for (const [dx, dy] of [
     [0, 1],
     [1, 0],

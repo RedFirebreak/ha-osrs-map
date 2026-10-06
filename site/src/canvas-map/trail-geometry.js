@@ -272,7 +272,7 @@ export function pointOnRun(run, { i, frac }) {
  * Where on the map the player is drawn at a time of the replay, in map pixels:
  * `{x, y, plane}`, or null before the trail starts. On a run that is a place
  * on its line; during a teleport it rides the arc; during any other jump
- * (the next room of a house too) it waits where the player left.
+ * (the next room of a house or a raid too) it waits where the player left.
  */
 export function placeAtTime(geometry, time) {
   let place = null;

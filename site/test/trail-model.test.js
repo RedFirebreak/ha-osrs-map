@@ -49,7 +49,7 @@ describe("decodeTrail", () => {
     const row = (seconds, via) => [3200 + seconds, 3200, 0, T + seconds, 0, 0, via];
     const trail = decodeTrail({
       step: 60,
-      points: [[3200, 3200, 0, T], row(1, 1), row(2, 2), row(3, 3), row(4, 4), row(5, 5), row(6, 0), row(7, 9)],
+      points: [[3200, 3200, 0, T], row(1, 1), row(2, 2), row(3, 3), row(4, 4), row(5, 5), row(6, 0), row(7, 6)],
     });
     expect(trail.points.map((point) => point.via)).toEqual([
       undefined,
@@ -59,9 +59,17 @@ describe("decodeTrail", () => {
       "teleport",
       "gap",
       undefined,
-      undefined,
+      "instance",
     ]);
     expect("via" in trail.points[0]).toBe(false);
+  });
+
+  it("tells a label nobody knows from no label at all", () => {
+    const row = (seconds, via) => [3200 + seconds, 3200, 0, T + seconds, 0, 0, via];
+    // 7 is the server's code for a label of the hub's it doesn't know; 9 is a
+    // code of a newer server that this site doesn't know.
+    const trail = decodeTrail({ step: 60, points: [[3200, 3200, 0, T], row(1, 0), row(2, 7), row(3, 9)] });
+    expect(trail.points.map((point) => point.via)).toEqual([undefined, undefined, "other", "other"]);
   });
 
   it("reads a bare list of points from an older server and skips broken ones", () => {
@@ -163,6 +171,38 @@ describe("classifyStep with the hub's labels", () => {
     expect(classifyStep(at(1900, 7050, 0), at(1964, 7058, 1))).toBe("walk");
   });
 
+  it("knows the next room of a raid, which isn't a teleport either", () => {
+    // Seen on a live stack: two rooms of the Gauntlet a game tick apart, as
+    // the server sends them.
+    const { points } = decodeTrail({
+      step: 60,
+      points: [
+        [1860, 5640, 0, T],
+        [1910, 5690, 0, T, 0, 0, 6],
+      ],
+    });
+    expect(classifyStep(points[0], points[1])).toBe("instance");
+    // Without the label it was anybody's guess.
+    expect(classifyStep(points[0], { ...points[1], via: undefined })).toBe("unknown");
+  });
+
+  it("takes a label nobody knows for not walked, and never guesses", () => {
+    // Three tiles in a minute: a walk, by the guess.
+    expect(classifyStep(at(3200, 3200, 0), at(3203, 3200, 1))).toBe("walk");
+    expect(classifyStep(at(3200, 3200, 0), at(3203, 3200, 1, via("other")))).toBe("unknown");
+    // Lumbridge to Ardougne: a teleport, by the guess. What it was isn't known.
+    expect(classifyStep(at(3222, 3218, 0), at(2662, 3305, 1, via("other")))).toBe("unknown");
+    // As the server sends it, with its code for such a label.
+    const { points } = decodeTrail({
+      step: 60,
+      points: [
+        [3200, 3200, 0, T],
+        [3203, 3200, 0, T + 60, 0, 0, 7],
+      ],
+    });
+    expect(buildTrailModel(points).kinds).toEqual(["unknown"]);
+  });
+
   it("goes by the label of the point reached, not of the one left", () => {
     expect(classifyStep(at(3200, 3200, 0, via("teleport")), at(3201, 3200, 1, via("move")))).toBe("walk");
     // A point seen live after the hub's last one has no label: the guess stands.
@@ -194,6 +234,28 @@ describe("buildTrailModel", () => {
     expect(positionAt(model, T + 150)).toMatchObject({ index: 2, kind: "house", x: 1903, moving: true });
     // Only the teleports are worth a tick on the timeline.
     expect(timelineTicks(model).map((tick) => tick.t)).toEqual([T + 60, T + 300]);
+  });
+
+  it("draws no line into the next room of a raid, and has no tick for it", () => {
+    const points = [
+      at(3030, 6120, 0),
+      at(1860, 5640, 1, { via: "teleport" }),
+      at(1863, 5640, 2, { via: "move" }),
+      at(1910, 5690, 3, { via: "instance" }),
+      at(1912, 5690, 4, { via: "move" }),
+    ];
+    const model = buildTrailModel(points);
+    expect(model.kinds).toEqual(["teleport", "walk", "instance", "walk"]);
+    expect(model.runs).toEqual([
+      { i0: 0, i1: 0, sail: false },
+      { i0: 1, i1: 2, sail: false },
+      { i0: 3, i1: 4, sail: false },
+    ]);
+    expect(model.jumps.map((jump) => jump.kind)).toEqual(["teleport", "instance"]);
+    // The player waits at the door until they are in the next room.
+    expect(positionAt(model, T + 150)).toMatchObject({ index: 2, kind: "instance", x: 1863, moving: true });
+    expect(nextChangeAfter(model, T + 150)).toBe(T + 180);
+    expect(timelineTicks(model).map((tick) => tick.t)).toEqual([T + 60]);
   });
 
   it("chains walked points into runs and lists the jumps between them", () => {
@@ -306,8 +368,55 @@ describe("mergeTrail", () => {
     expect(merged[1].t1).toBe(T + 9000);
   });
 
-  it("is only the live points when the hub has none yet", () => {
+  it("is only the live points when the hub has none yet, for a trail asked for in days", () => {
     expect(mergeTrail([], [live(3200, 3200, 10)], null, AS_OF)).toHaveLength(1);
+    expect(mergeTrail([], [live(3200, 3200, 10)], null, AS_OF, null)).toHaveLength(1);
+  });
+
+  describe("over a span that began at a moment (a play session that still goes on)", () => {
+    // Asked for from a minute in.
+    const FROM = T + 60;
+    const times = (points) => points.map((point) => [point.x, point.t0, point.t1]);
+
+    it("leaves out what was seen before the span began, also when the hub has nothing in it", () => {
+      // Seen an hour before, and half a minute before.
+      const seen = [live(3100, 3200, -3600), live(3200, 3200, 30)];
+      expect(mergeTrail([], seen, null, AS_OF, FROM)).toEqual([]);
+    });
+
+    it("keeps what was seen since, also when the hub has nothing in it", () => {
+      const seen = [live(3200, 3200, 30), live(3205, 3200, 70), live(3210, 3200, 100)];
+      expect(times(mergeTrail([], seen, null, AS_OF, FROM))).toEqual([
+        [3205, T + 70, T + 70],
+        [3210, T + 100, T + 100],
+      ]);
+    });
+
+    it("has a sighting that began before the span and lasted into it begin where the span does", () => {
+      const stood = { ...live(3200, 3200, 30), t1: T + 90 };
+      const merged = mergeTrail([], [live(3100, 3200, 10), stood, live(3210, 3200, 100)], null, AS_OF, FROM);
+      expect(times(merged)).toEqual([
+        [3200, FROM, T + 90],
+        [3210, T + 100, T + 100],
+      ]);
+      // The buffer itself is left as it was: another span may want all of it.
+      expect(stood.t0).toBe(T + 30);
+    });
+
+    it("still ends on the marker of a player who is online", () => {
+      const head = { x: 3230, y: 3201, plane: 0, boat: false, world: 302, t: T + 200 };
+      const merged = mergeTrail([], [live(3100, 3200, -3600)], head, AS_OF, FROM);
+      expect(times(merged)).toEqual([[3230, T + 200, T + 200]]);
+    });
+
+    it("changes nothing where the hub has points: what was seen before it answered is in them", () => {
+      const session = [at(3200, 3200, 1), at(3210, 3200, 1.5)];
+      const seen = [live(3100, 3200, -3600), live(3205, 3200, 70), live(3220, 3200, 130)];
+      expect(times(mergeTrail(session, seen, null, AS_OF, FROM))).toEqual(
+        times(mergeTrail(session, seen, null, AS_OF)),
+      );
+      expect(mergeTrail(session, seen, null, AS_OF, FROM).map((point) => point.x)).toEqual([3200, 3210, 3220]);
+    });
   });
 
   describe("with a marker that is behind the hub", () => {
@@ -499,6 +608,19 @@ describe("events and the timeline", () => {
 
   it("calls the place a guess while the player was between two places the trail can't join", () => {
     const [mark] = placeMarks([event("tele", 90)], "Alice", model());
+    expect(mark).toMatchObject({ x: 3210, y: 3201, approximate: true });
+  });
+
+  it("marks a death inside an instance where the trail has the player, not where the instance is kept", () => {
+    // The plugin says where a death happened in the instance's own
+    // coordinates, far east of the map; the trail it sends stays in the world.
+    const location = { x: 12850, y: 4500, plane: 0 };
+    const death = event("raid", 30, { type: "death", location });
+    expect(placeMarks([death], "Alice", model())).toEqual([
+      { id: "raid", event: death, x: 3205, y: 3201, plane: 0, t: T + 30, approximate: false },
+    ]);
+    // A guess, like any other, while the trail can't say where the player was.
+    const [mark] = placeMarks([event("away", 90, { type: "superior_spawn", location })], "Alice", model());
     expect(mark).toMatchObject({ x: 3210, y: 3201, approximate: true });
   });
 

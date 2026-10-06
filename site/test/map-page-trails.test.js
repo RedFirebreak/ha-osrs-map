@@ -3,6 +3,7 @@ import { api } from "../src/data/api";
 import { pubsub } from "../src/data/pubsub";
 import { selection } from "../src/data/selection";
 import { colorForName } from "../src/data/player-colors";
+import { TrailLayer } from "../src/canvas-map/trail-layer";
 import "../src/map-page/map-page";
 
 const NOW_S = 1_790_000_000;
@@ -166,8 +167,36 @@ describe("map page trails", () => {
       light,
       windowS: 86400,
       until: null,
+      from: NOW_S - 86400,
     });
     expect(page.querySelector('[data-name="Bob"]').textContent).toContain("not shared");
+  });
+
+  it("draws nothing of what was seen of a player longer ago than the trails go back", async () => {
+    // The map's own trails behind the stand-in for the map, on a clock of their own.
+    let seenAt = NOW_S - 30 * 3600;
+    const layer = new TrailLayer({ now: () => seenAt });
+    worldMap.setTrail = vi.fn((name, trail, style) => layer.setHistory(name, trail, style));
+    worldMap.clearTrail = vi.fn((name) => layer.remove(name));
+    worldMap.trailNames = () => layer.names();
+    // Bob walked about thirty hours ago, in a tab that has been open since, and logged out.
+    for (const x of [3230, 3240, 3250]) {
+      layer.observe("Bob", { x, y: 3201, plane: 0 }, true);
+      seenAt += 60;
+    }
+    layer.observe("Bob", { x: 3250, y: 3201, plane: 0 }, false);
+    seenAt = NOW_S;
+
+    // The hub has nothing of Bob in the last 24 hours.
+    vi.spyOn(api, "getTrails").mockResolvedValue({
+      ...trailsResponse(["Bob"]),
+      trails: [{ member: "Bob", shared: true, step: 60, points: [] }],
+    });
+    mount();
+    selection.toggleTrail("Bob");
+    await settle();
+    expect(page.querySelector('[data-name="Bob"]').textContent).toBe("Bob (no points)");
+    expect(layer.modelOf("Bob").points).toEqual([]);
   });
 
   it("doesn't ask for trails while the server has the hub's history switched off", async () => {
@@ -311,6 +340,29 @@ describe("map page trails", () => {
       expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
     });
 
+    it("of the drops that are shown stay when an answer for bigger drops only comes in after them", async () => {
+      // The first answer, for drops of 100K and up, takes its time.
+      const slow = deferred();
+      api.getTrailEvents.mockImplementationOnce(() => slow.promise);
+      api.getTrailEvents.mockResolvedValue([event("small", "Alice", 400, { type: "loot" }), event("a", "Alice", 300)]);
+      mount();
+      selection.toggleTrail("Alice");
+      await settle();
+      const minLoot = page.querySelector(".map-page__event-min-loot");
+      minLoot.value = "0";
+      minLoot.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle();
+      expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
+      expect(marked("Alice")).toEqual(["small", "a"]);
+
+      slow.resolve([event("a", "Alice", 300)]);
+      await settle();
+      expect(marked("Alice")).toEqual(["small", "a"]);
+      // Every drop is in hand: nothing to ask again with the next refresh.
+      await vi.advanceTimersByTimeAsync(60000);
+      expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
+    });
+
     it("are asked for again for a trail that was switched off and on", async () => {
       mount();
       selection.toggleTrail("Alice");
@@ -350,6 +402,75 @@ describe("map page trails", () => {
       await settle();
       await vi.advanceTimersByTimeAsync(5 * 60000);
       expect(api.getTrailEvents).toHaveBeenCalledTimes(1);
+    });
+
+    describe("that come in after the trails went on to another length", () => {
+      const select = () => page.querySelector(".map-page__trail-days");
+
+      async function showSevenDays() {
+        select().value = "7";
+        select().dispatchEvent(new Event("change"));
+        await settle();
+      }
+
+      it("are dropped: the trails keep the events of the time they show", async () => {
+        const slow = deferred();
+        api.getTrailEvents.mockImplementation((name, span) =>
+          span === 1 ? slow.promise : Promise.resolve([event("week", "Alice", 3 * 86400)]),
+        );
+        mount();
+        selection.toggleTrail("Alice");
+        await settle();
+        await showSevenDays();
+        expect(marked("Alice")).toEqual(["week"]);
+
+        // The answer for 24 hours, which the trails no longer show.
+        slow.resolve([event("day", "Alice", 300)]);
+        await settle();
+        expect(marked("Alice")).toEqual(["week"]);
+        // The 7 days' events are in hand: nothing to ask again with the next refresh.
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
+      });
+
+      it("are dropped when the hub was busy with them, too", async () => {
+        const slow = deferred();
+        api.getTrailEvents.mockImplementation((name, span) =>
+          span === 1 ? slow.promise : Promise.resolve([event("week", "Alice", 3 * 86400)]),
+        );
+        mount();
+        selection.toggleTrail("Alice");
+        await settle();
+        await showSevenDays();
+
+        slow.reject(Object.assign(new Error("busy"), { status: 503 }));
+        await settle();
+        expect(marked("Alice")).toEqual(["week"]);
+        // The 7 days' events are in hand: nothing to ask again with the next refresh.
+        await vi.advanceTimersByTimeAsync(60000);
+        expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
+      });
+
+      it("leave the player due for the time the trails are going on to", async () => {
+        const slowEvents = deferred();
+        api.getTrailEvents.mockReturnValueOnce(slowEvents.promise);
+        mount();
+        selection.toggleTrail("Alice");
+        await settle();
+        // The trails for 7 days take their time; the events for 24 hours come in meanwhile.
+        const slowTrails = deferred();
+        api.getTrails.mockReturnValueOnce(slowTrails.promise);
+        await showSevenDays();
+        slowEvents.resolve([event("day", "Alice", 300)]);
+        await settle();
+        expect(api.getTrailEvents).toHaveBeenCalledTimes(1);
+
+        slowTrails.resolve(trailsResponse(["Alice"]));
+        await settle();
+        expect(api.getTrailEvents).toHaveBeenCalledTimes(2);
+        expect(api.getTrailEvents).toHaveBeenLastCalledWith("Alice", 7, 100000);
+        expect(marked("Alice")).toEqual(["a", "l"]);
+      });
     });
 
     it("leave the filtering to the map, which is told the filters", async () => {
@@ -589,15 +710,56 @@ describe("map page trails", () => {
       expect(api.getTrailEvents).toHaveBeenLastCalledWith("Bob", span, 100000);
       // Drawn as a trail that ended then, as long as the session was.
       const style = worldMap.setTrail.mock.calls.at(-1)[2];
-      expect(style).toMatchObject({ windowS: END - START + 120, until: END + 60 });
+      expect(style).toMatchObject({ windowS: END - START + 120, until: END + 60, from: START - 60 });
     });
 
     it("shows a session that is still going on until now", async () => {
       await shown(["Alice"]);
       await pick(0);
       expect(api.getTrails).toHaveBeenLastCalledWith(["Alice"], { from: NOW_S - 1800 - 60, to: null });
+      // The map is told from when: the same moment the server was asked from.
       const style = worldMap.setTrail.mock.calls.at(-1)[2];
-      expect(style).toMatchObject({ windowS: 1860, until: null });
+      expect(style).toMatchObject({ windowS: 1860, until: null, from: NOW_S - 1800 - 60 });
+    });
+
+    it("draws nothing of what was seen of a player before a session that is still going on began", async () => {
+      // The map's own trails behind the stand-in for the map, on a clock of their own.
+      let seenAt = NOW_S - 7200;
+      const layer = new TrailLayer({ now: () => seenAt });
+      worldMap.setTrail = vi.fn((name, trail, style) => layer.setHistory(name, trail, style));
+      worldMap.clearTrail = vi.fn((name) => layer.remove(name));
+      worldMap.trailNames = () => layer.names();
+      // Bob walked about two hours ago, while this tab was open, and logged out.
+      for (const x of [3230, 3240, 3250]) {
+        layer.observe("Bob", { x, y: 3201, plane: 0 }, true);
+        seenAt += 60;
+      }
+      layer.observe("Bob", { x: 3250, y: 3201, plane: 0 }, false);
+      seenAt = NOW_S;
+
+      // Alice's session began half an hour ago; the hub has nothing of Bob in it.
+      api.getPlayerSessions.mockResolvedValue({ sessions: [open, over], total_ms: 0 });
+      vi.spyOn(api, "getTrails").mockImplementation(async (members) => ({
+        ...trailsResponse(members),
+        trails: members.map((member) => ({
+          member,
+          shared: true,
+          step: 60,
+          points: member === "Alice" ? [[3200, 3200, 0, NOW_S - 600]] : [],
+        })),
+      }));
+      mount();
+      selection.toggleTrail("Alice");
+      selection.toggleTrail("Bob");
+      await settle();
+      // Over 24 hours the sightings are Bob's trail, as before.
+      expect(layer.modelOf("Bob").points).toHaveLength(3);
+
+      await pick(0);
+      expect(page.querySelector('[data-name="Bob"]').textContent).toBe("Bob (no points)");
+      expect(layer.modelOf("Bob").points).toEqual([]);
+      // And the replay starts where the session's trail does.
+      expect(layer.timeline().tMin).toBe(NOW_S - 600);
     });
 
     it("does not remember a session as the length of the trails", async () => {
@@ -643,6 +805,162 @@ describe("map page trails", () => {
       await settle();
       expect(select().querySelector("optgroup")).toBeNull();
       expect(worldMap.trailNames()).toEqual(["Alice"]);
+    });
+
+    it("keeps the session that was picked when newer ones push it out of the twelve", async () => {
+      // Twelve sessions of half an hour, an hour apart.
+      const startOf = (index) => NOW_S - (index + 2) * 3600;
+      const older = Array.from({ length: 12 }, (_, index) => ({
+        started_at: iso(startOf(index)),
+        ended_at: iso(startOf(index) + 1800),
+        last_seen_at: iso(startOf(index) + 1800),
+        duration_ms: 1800000,
+      }));
+      await shown(["Alice"], older);
+      await pick(11);
+      const span = { from: startOf(11) - 60, to: startOf(11) + 1800 + 60 };
+      expect(api.getTrails).toHaveBeenLastCalledWith(["Alice"], span);
+
+      // Alice logs in again: her newest session is a thirteenth.
+      api.getPlayerSessions.mockResolvedValue({ sessions: [open, ...older], total_ms: 0 });
+      await vi.advanceTimersByTimeAsync(61000);
+      await settle();
+      expect(sessionOptions()).toHaveLength(13);
+      expect(sessionOptions()[0].textContent).toMatch(/^Now, since /);
+      expect(select().value).toBe(`session:${startOf(11) * 1000}`);
+      expect(api.getTrails).toHaveBeenLastCalledWith(["Alice"], span);
+    });
+
+    it("leaves the menu to the player it is for when another's sessions come in late", async () => {
+      await shown(["Alice", "Bob"]);
+      expect(select().querySelector("optgroup").label).toBe("Sessions of Alice");
+      // Bob is selected, and his sessions take their time. Then Alice is again.
+      const slow = deferred();
+      api.getPlayerSessions.mockReturnValueOnce(slow.promise);
+      selection.select("Bob");
+      selection.select("Alice");
+      slow.resolve({ sessions: [over], total_ms: 0 });
+      await settle();
+      expect(select().querySelector("optgroup").label).toBe("Sessions of Alice");
+      expect(sessionOptions()).toHaveLength(2);
+    });
+
+    it("says the time of day too where a session's trail starts that was too long to show whole", async () => {
+      // A session of three days ago, of which only the newest part fits.
+      const start = NOW_S - 3 * 86400 - 7200;
+      const long = {
+        started_at: iso(start),
+        ended_at: iso(start + 7200),
+        last_seen_at: iso(start + 7200),
+        duration_ms: 7200000,
+      };
+      api.getPlayerSessions.mockResolvedValue({ sessions: [long], total_ms: 0 });
+      vi.spyOn(api, "getTrails").mockImplementation(async (members) => {
+        const response = trailsResponse(members);
+        response.trails[0].truncated = true;
+        response.trails[0].points = [
+          [3200, 3200, 0, start + 3600],
+          [3201, 3200, 0, start + 7000],
+        ];
+        return response;
+      });
+      mount();
+      selection.toggleTrail("Alice");
+      await settle();
+      const first = new Date((start + 3600) * 1000);
+      const day = first.toLocaleDateString([], { day: "numeric", month: "short" });
+      const time = first.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      // Of a trail in days, a start that long ago is said as its day.
+      expect(page.querySelector('[data-name="Alice"]').textContent).toBe(`Alice (since ${day})`);
+      // The session was on that day: the day alone would say nothing.
+      await pick(0);
+      expect(page.querySelector('[data-name="Alice"]').textContent).toBe(`Alice (since ${day} ${time})`);
+    });
+
+    describe("of the player the replay watches", () => {
+      /** The trails as the hub gives them when it shares only some of them. */
+      function sharing(shared) {
+        api.getPlayerSessions.mockResolvedValue({ sessions: [open, over], total_ms: 0 });
+        vi.spyOn(api, "getTrails").mockImplementation(async (members) => ({
+          ...trailsResponse(members),
+          trails: trailsResponse(members).trails.map((trail) =>
+            shared.includes(trail.member) ? trail : { member: trail.member, shared: false },
+          ),
+        }));
+      }
+
+      it("isn't offered of the first trail's player when the hub doesn't share that trail", async () => {
+        sharing(["Bob"]);
+        mount();
+        selection.toggleTrail("Alice");
+        selection.toggleTrail("Bob");
+        await settle();
+        // Only Bob's trail is on the map: the replay watches him.
+        expect(worldMap.trailNames()).toEqual(["Bob"]);
+        expect(api.getPlayerSessions).toHaveBeenLastCalledWith("Bob", 7);
+        expect(select().querySelector("optgroup").label).toBe("Sessions of Bob");
+      });
+
+      it("isn't offered of the selected player when the hub doesn't share their trail", async () => {
+        sharing(["Bob"]);
+        mount();
+        selection.toggleTrail("Bob");
+        selection.toggleTrail("Alice");
+        selection.select("Alice");
+        await settle();
+        expect(select().querySelector("optgroup").label).toBe("Sessions of Bob");
+      });
+
+      it("moves on when the trail of the player it was offered of is no longer shared", async () => {
+        await shown(["Alice", "Bob"]);
+        expect(select().querySelector("optgroup").label).toBe("Sessions of Alice");
+        sharing(["Bob"]);
+        await vi.advanceTimersByTimeAsync(60000);
+        await settle();
+        expect(page.querySelector('[data-name="Alice"]').textContent).toBe("Alice (not shared)");
+        expect(select().querySelector("optgroup").label).toBe("Sessions of Bob");
+      });
+
+      it("is of the first trail on the map, as the replay has it, not of the first that was asked for", async () => {
+        sharing(["Bob"]);
+        mount();
+        selection.toggleTrail("Alice");
+        selection.toggleTrail("Bob");
+        await settle();
+        // Alice shares her trail after all: it comes onto the map after Bob's.
+        sharing(["Alice", "Bob"]);
+        await vi.advanceTimersByTimeAsync(60000);
+        await settle();
+        expect(worldMap.trailNames()).toEqual(["Bob", "Alice"]);
+        expect(select().querySelector("optgroup").label).toBe("Sessions of Bob");
+      });
+
+      it("is asked for with the trails, not after them, and once", async () => {
+        api.getPlayerSessions.mockResolvedValue({ sessions: [open, over], total_ms: 0 });
+        const trails = deferred();
+        vi.spyOn(api, "getTrails").mockReturnValue(trails.promise);
+        mount();
+        selection.toggleTrail("Alice");
+        await settle();
+        // No trail is on the map yet: the menu goes by the one that was asked for.
+        expect(worldMap.trailNames()).toEqual([]);
+        expect(api.getPlayerSessions).toHaveBeenCalledWith("Alice", 7);
+        expect(select().querySelector("optgroup").label).toBe("Sessions of Alice");
+
+        trails.resolve(trailsResponse(["Alice"]));
+        await settle();
+        expect(api.getPlayerSessions).toHaveBeenCalledTimes(1);
+      });
+
+      it("stays with the session that was picked when its player's trail is no longer shared", async () => {
+        await shown(["Alice", "Bob"]);
+        await pick(1);
+        sharing(["Bob"]);
+        await vi.advanceTimersByTimeAsync(60000);
+        await settle();
+        expect(select().querySelector("optgroup").label).toBe("Sessions of Alice");
+        expect(api.getTrails).toHaveBeenLastCalledWith(["Alice", "Bob"], { from: START - 60, to: END + 60 });
+      });
     });
   });
 

@@ -23,6 +23,12 @@ for local development.
 | `GET /events?accounts=` | Profile → Activity (a player's recent events) | 30 s |
 | `GET /events?accounts=&from=&to=` | The events marked on a trail, over its length (`to` only for a session that is over): pages of 500, newest first, until `next_cursor` is null or 2000 events. When the map leaves out small drops, drops (`types=loot,pk_loot&min_value=`, from the smallest drop the map shows) are read apart from the other kinds, so a trail costs 2 to 8 requests; with every drop shown it is one read of all kinds, 1 to 4 requests. The site asks once per trail and again every 10 min. A hub from before D-98 ignores `from` and hands back a feed cursor; the backend then keeps that one page | 2 min |
 
+A death's and a superior spawn's own location is where the map puts the event, unless it lies
+inside an instance (x of 6400 or more): there the plugin sends the instance's raw coordinates, not
+the place in the world that a position and a trail give (the hub's gotcha PLUGIN-12), so the event
+goes where one without a location goes, where the trail has the player at that time or where the
+player was when it arrived.
+
 ## Snapshot fields
 
 `id`, `name`, `account_hash` (matching existing members),
@@ -31,8 +37,10 @@ for local development.
 `categories`, `skills.total_level`/`overall_xp`, `inventory.value`/`equipment.value`, `spellbook`,
 `game_state` and `location.is_on_boat`.
 
-Presence comes from `online` and `last_seen`. `game_state` is shown as a detail only: the hub doesn't
-clear it when an account times out.
+Presence comes from `online` and `last_seen`. `game_state` is shown as a detail only, next to a
+player who is online ("Hopping worlds"). The hub sends `null` for it once an in-game state timed out
+(`online` turned false without a logout: a crashed client), so it never says `LOGGED_IN` for a
+player who is offline (D-94).
 
 ## Trails
 
@@ -45,9 +53,11 @@ hub's answer (`via`, D-103), so the map doesn't guess teleports:
 | `move` | A line: a walk, stairs when the floor differs, a sail when both points are on a boat |
 | `entrance` | A ring at both ends, no line |
 | `house` | The next room of a player-owned house: no line and no arc, a small house where the player came in. The replay doesn't hold there and the timeline has no tick for it |
+| `instance` | The next room of the Gauntlet, the Corrupted Gauntlet or the Chambers of Xeric, which the game builds from copied rooms as it does a house. The same as `house`, with a small square where the player came in instead of the house |
 | `teleport` | A dashed arc with a burst at both ends; a stub at each end when the other end is on another part of the map. The replay stops for it and plays it out |
 | `gap` | A dotted link: nothing is known about what happened |
-| none | The first point of an answer, a label this server doesn't know, or a hub from before D-103. The map then guesses from distance and time, as it does for the positions it sees live between two reads of the trail |
+| a label this server doesn't know | Not walked, which is what the hub's API asks for a label it adds later: the dotted link of a `gap`. The map never guesses for it, because a guess can come out as a walked line |
+| none | The first point of an answer, or a hub from before D-103. The map then guesses from distance and time, as it does for the positions it sees live between two reads of the trail |
 
 **Reading.** An answer holds the newest 20,000 points and says `truncated` when older ones were
 left out, so the backend reads a trail in two parts (`server/src/hub/trails.rs`):
@@ -69,7 +79,10 @@ backend sends that time with every trail (`as_of`, by its own clock, which also 
 sees), and the site adds only what it saw from then on. The times of the hub's points can't decide
 this: they are the plugin's clock, and the newest of them can be a minute older than the message it
 came in. For a few seconds after a read the trail can be ahead of the marker; it then ends where
-the hub has the player, not on the marker.
+the hub has the player, not on the marker. A trail gets nothing the site saw before its time
+began (a session that still goes on, or the 24 hours or 7 days before now), also when the hub has
+no point of the player in it: what a browser tab has seen of a player goes back for as long as it
+has been open.
 
 **Labels and thinning.** A label belongs to two points as the hub returned them, so it is read
 before anything is removed. Consecutive points on one tile become a stay, which keeps the label of
@@ -126,14 +139,20 @@ is `location_history`: a player who shares their trail but not their activity ha
 pick, and their trail is still there in days.
 
 **To the site.** A point is `[x, y, plane, unix seconds, dwell, flags, via]` with `via` 1 move, 2
-entrance, 3 house, 4 teleport, 5 gap and 0 (left out) when the hub didn't say. The response has
-`"v": 3`. Times are whole seconds.
+entrance, 3 house, 4 teleport, 5 gap, 6 instance, 7 a label this server doesn't know, and 0 (left
+out) when the hub didn't say. The site takes a number it doesn't know for 7. The dev stack's checks
+(`osrs-dev-stack`) read these numbers too: a new label gets a new number, and none of them changes.
+The response has `"v": 3`. Times are whole seconds, except each trail's own `as_of`, which is to the
+millisecond: the site holds it against the moment it saw a marker move. The answer's `as_of`, of the
+trail the hub gave longest ago, is in whole seconds.
 
 ## Categories
 
-A player who hasn't changed the hub's defaults shares `stats`, `events`, `activity` and `location_live`
-with the guild. `inventory`, `equipment` and `location_history` are private by default, so their profile
-tabs and trails show "not shared". The map reads `categories` to tell "not shared" from "empty".
+The hub shares every category with the guild by default (D-96). An account the hub knew before a
+category got that default keeps it private until its owner shares it: `location_live` from before
+D-82, and `inventory`, `equipment` and `location_history` from before D-96. Such a player has no
+marker, or profile tabs and a trail that show "not shared". The map reads `categories` to tell "not
+shared" from "empty".
 
 What the key may not read, the map doesn't hold. A field the hub leaves out because its category is
 off the account's `categories` empties what the map stored for it, in the database and in
@@ -166,5 +185,6 @@ out stays where they were last seen.
 | `GET /members/{discord_id}`: whether a Discord account is a member and an admin | D-100 | osrs-data-hub PR #46 |
 | A trail point per game tick, 20,000 to an answer, `truncated` | D-102 | osrs-data-hub PR #48 |
 | `via` on every trail point: how the player got there | D-103 | osrs-data-hub PR #49 |
+| `instance` as a `via`: a walk into the next room of a raid | D-103 | osrs-data-hub PR #53 |
 
 Push to keys (webhooks or a key-authenticated stream) was deferred (D-93); polling stays the contract.

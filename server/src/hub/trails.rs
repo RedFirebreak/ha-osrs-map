@@ -380,16 +380,21 @@ pub(crate) fn thin_trail(points: Vec<TrailPoint>, max_points: usize) -> BuiltTra
     cut(points, weights, None, max_points).built()
 }
 
-/// The label of a point as the site gets it; 0 when the hub didn't say, or
-/// said something this server doesn't know.
+/// The label of a point as the site gets it. 0 is "the hub didn't say", and
+/// the site then guesses; 7 is a label this server doesn't know, which is not
+/// walked and never guessed at. The numbers are read outside this repository
+/// too (the dev stack's checks): a new label gets a new number, and none of
+/// these changes.
 fn via_code(via: Option<HubVia>) -> i64 {
     match via {
-        None | Some(HubVia::Other) => 0,
+        None => 0,
         Some(HubVia::Move) => 1,
         Some(HubVia::Entrance) => 2,
         Some(HubVia::House) => 3,
         Some(HubVia::Teleport) => 4,
         Some(HubVia::Gap) => 5,
+        Some(HubVia::Instance) => 6,
+        Some(HubVia::Other) => 7,
     }
 }
 
@@ -1292,7 +1297,9 @@ mod tests {
                 {"at": "2026-09-29T00:00:01.800Z", "x": 1900, "y": 7050, "plane": 0, "via": "teleport"},
                 {"at": "2026-09-29T00:00:02.400Z", "x": 1960, "y": 7050, "plane": 0, "via": "house"},
                 {"at": "2026-09-29T00:09:00.000Z", "x": 1960, "y": 7050, "plane": 0, "via": "gap"},
-                {"at": "2026-09-29T00:09:00.600Z", "x": 1960, "y": 7051, "plane": 0, "via": "flight"}
+                {"at": "2026-09-29T00:09:00.600Z", "x": 1960, "y": 7051, "plane": 0, "via": "flight"},
+                {"at": "2026-09-29T00:09:01.200Z", "x": 1860, "y": 5640, "plane": 0, "via": "teleport"},
+                {"at": "2026-09-29T00:09:01.800Z", "x": 1910, "y": 5690, "plane": 0, "via": "instance"}
             ]
         }))
         .unwrap();
@@ -1307,7 +1314,10 @@ mod tests {
                 Some(HubVia::Teleport),
                 Some(HubVia::House),
                 Some(HubVia::Gap),
+                // A label from a newer hub than this server knows.
                 Some(HubVia::Other),
+                Some(HubVia::Teleport),
+                Some(HubVia::Instance),
             ]
         );
         // A hub from before the trail came in pages.
@@ -1360,6 +1370,7 @@ mod tests {
         for via in [
             HubVia::Entrance,
             HubVia::House,
+            HubVia::Instance,
             HubVia::Teleport,
             HubVia::Gap,
             HubVia::Other,
@@ -1440,11 +1451,12 @@ mod tests {
         let labels = [
             HubVia::Entrance,
             HubVia::House,
+            HubVia::Instance,
             HubVia::Teleport,
             HubVia::Gap,
             HubVia::Other,
         ];
-        let points: Vec<HubLocationPoint> = (0..9000)
+        let points: Vec<HubLocationPoint> = (0..1500 * (labels.len() as i64 + 1))
             .map(|i| {
                 let via = match i % 1500 {
                     0 if i > 0 => labels[(i / 1500 - 1) as usize],
@@ -1854,6 +1866,8 @@ mod tests {
             tick(64, 1960, 7050, HubVia::House),
             tick(600, 1960, 7050, HubVia::Gap),
             tick(601, 1961, 7050, HubVia::Other),
+            tick(602, 1860, 5640, HubVia::Teleport),
+            tick(603, 1910, 5690, HubVia::Instance),
         ];
         let json = trail_json(
             "Zezima",
@@ -1866,10 +1880,38 @@ mod tests {
             .iter()
             .map(|point| point.get(6).and_then(Value::as_i64).unwrap_or(0))
             .collect();
-        assert_eq!(codes, [0, 1, 2, 4, 3, 5, 0]);
+        // No label is 0; a label this server doesn't know has a number of its own.
+        assert_eq!(codes, [0, 1, 2, 4, 3, 5, 7, 4, 6]);
         assert_eq!(
             json["points"][1],
             serde_json::json!([3201, 3200, 0, TRAIL_START + 61, 0, 0, 1])
+        );
+    }
+
+    #[test]
+    fn a_walk_into_the_next_room_of_a_raid_reaches_the_site_as_one() {
+        // Seen on a live stack: two rooms of the Gauntlet, a game tick apart.
+        // The second point reached the site without a label, and the site
+        // guessed.
+        let answer: HubAccountLocations = serde_json::from_value(serde_json::json!({
+            "account": {"id": "a", "name": "Alpha"},
+            "truncated": false,
+            "points": [
+                {"at": "2026-10-05T19:00:00.000Z", "x": 1860, "y": 5640, "plane": 0,
+                 "world": 302, "is_on_boat": false, "via": null},
+                {"at": "2026-10-05T19:00:00.600Z", "x": 1910, "y": 5690, "plane": 0,
+                 "world": 302, "is_on_boat": false, "via": "instance"}
+            ]
+        }))
+        .unwrap();
+        let stays = merge_stays(&answer.points);
+        // Not walked on the map: thinning keeps both of its points.
+        assert!(stays[1].jump);
+        let at = answer.points[0].at.timestamp();
+        let json = trail_json("Zezima", &thin_trail(stays, 1000), Utc::now());
+        assert_eq!(
+            json["points"],
+            serde_json::json!([[1860, 5640, 0, at], [1910, 5690, 0, at, 0, 0, 6]])
         );
     }
 }

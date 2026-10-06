@@ -1,6 +1,7 @@
 import {
   buildTrailModel,
   decodeTrail,
+  isNextRoom,
   mergeTrail,
   nextChangeAfter,
   observeLive,
@@ -37,12 +38,15 @@ export class TrailLayer {
    * decodeTrail. `windowS` is how long a time the trail was asked for, and
    * `until` when that time ended (unix seconds) if it didn't run until now:
    * a play session that is over. Such a trail is what the hub has of it and
-   * no more; where the player is now is no part of it. A server that doesn't
-   * say when the hub gave the trail is taken to have asked now.
+   * no more; where the player is now is no part of it. `from` is when that
+   * time began (unix seconds): for a play session as the server was asked,
+   * for a number of days that long before now. Where the player was seen
+   * before then is no part of the trail either. A server that doesn't say
+   * when the hub gave the trail is taken to have asked now.
    */
-  setHistory(name, raw, { color, light, windowS = DAY_S, until = null }) {
+  setHistory(name, raw, { color, light, windowS = DAY_S, until = null, from = null }) {
     const { points, step, asOf = this.now() } = decodeTrail(raw);
-    this.trails.set(name, { history: points, step, asOf, color, light, windowS, until });
+    this.trails.set(name, { history: points, step, asOf, color, light, windowS, until, from });
     this.rebuild(name);
   }
 
@@ -155,7 +159,7 @@ export class TrailLayer {
     const trail = this.trails.get(name);
     const seen = trail.until === null ? this.seen.get(name) : null;
     const head = seen?.online && seen.position ? { ...seen.position, t: this.now() } : null;
-    const points = mergeTrail(trail.history, seen?.buffer || [], head, trail.asOf);
+    const points = mergeTrail(trail.history, seen?.buffer || [], head, trail.asOf, trail.from);
     trail.model = buildTrailModel(points, { step: trail.step });
     trail.geometries = [];
     trail.marks = null;
@@ -229,14 +233,14 @@ export class TrailLayer {
    * Where a player next turns up somewhere else, landing after `from` and up
    * to `to`: `{leave, land, kind}`, when they left, when they landed, and
    * whether it was a teleport, an entrance or a jump that can't be explained
-   * ("unknown"). The next room of their house isn't somewhere else. Null when
-   * they don't in that span, or have no trail.
+   * ("unknown"). The next room of their house, or of a raid, isn't somewhere
+   * else. Null when they don't in that span, or have no trail.
    */
   nextHop(name, from, to) {
     const model = this.modelOf(name);
     if (!model) return null;
     for (const jump of model.jumps) {
-      if (jump.kind === "house") continue;
+      if (isNextRoom(jump.kind)) continue;
       const land = model.points[jump.from + 1].t0;
       if (land > to) return null;
       if (land > from) return { leave: model.points[jump.from].t1, land, kind: jump.kind };

@@ -1,5 +1,6 @@
 import { tileCenter } from "./map-space";
 import { hopPhases, placeAtTime, pointOnArc, pointOnRun, vertexAtTime } from "./trail-geometry";
+import { isNextRoom } from "./trail-model";
 
 // Draws one trail on the map's canvas, in the map's own pixels (the camera
 // transform is already set), so every size is divided by the zoom to come out
@@ -157,19 +158,26 @@ function ring(ctx, view, x, y, color, alpha) {
 }
 
 /**
- * A small house above a point, clear of the line that starts there: the
- * player walked into this room of their house from the one before.
+ * A small mark above a point, clear of the line that starts there: the player
+ * walked into this room from the one before. With a roof it is a little
+ * house, for a room of their own house; without one a plain square of the
+ * same width, for a room of a raid, which is nobody's house.
  */
-function house(ctx, view, x, tileY, color, alpha) {
+function room(ctx, view, x, tileY, color, alpha, roofed) {
   const size = 4 / view.zoom;
   const y = tileY - 12 / view.zoom;
   ctx.setLineDash([]);
   ctx.lineJoin = "round";
   ctx.beginPath();
   ctx.moveTo(x - size, y + size);
-  ctx.lineTo(x - size, y - size * 0.25);
-  ctx.lineTo(x, y - size * 1.25);
-  ctx.lineTo(x + size, y - size * 0.25);
+  if (roofed) {
+    ctx.lineTo(x - size, y - size * 0.25);
+    ctx.lineTo(x, y - size * 1.25);
+    ctx.lineTo(x + size, y - size * 0.25);
+  } else {
+    ctx.lineTo(x - size, y - size);
+    ctx.lineTo(x + size, y - size);
+  }
   ctx.lineTo(x + size, y + size);
   ctx.closePath();
   ctx.globalAlpha = alpha * 0.7;
@@ -245,9 +253,9 @@ function drawJump(ctx, view, trail, jump, alpha, progress, animate) {
     }
   }
   if (kind === "unknown") return moving;
-  if (kind === "house") {
+  if (isNextRoom(kind)) {
     // Walked, so nothing where they left and no link: only the room they came into.
-    if (arrived && inView(view, bx, by, pad)) house(ctx, view, bx, by, trail.light, alphaB);
+    if (arrived && inView(view, bx, by, pad)) room(ctx, view, bx, by, trail.light, alphaB, kind === "house");
     return moving;
   }
 
