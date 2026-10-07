@@ -1,18 +1,24 @@
 login-page {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100%;
+  min-height: 100%;
   width: 100%;
 }
 
+/* Centred by its margin, not by the flex container: on a small screen the top of a card that is
+   taller than the window can still be scrolled to. */
 .login__container {
   max-width: 500px;
+  margin: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 16px 24px;
   font-size: 1.2em;
+}
+
+.login__title {
+  margin: 0 0 0.5em;
+  text-align: center;
 }
 
 .login__intro {
@@ -22,6 +28,29 @@ login-page {
 .login__error {
   text-align: center;
   margin-top: 1em;
+}
+
+.login__note {
+  text-align: center;
+  font-size: 0.85em;
+  margin: 1em 0 0;
+}
+
+.login__footer {
+  text-align: center;
+  font-size: 0.85em;
+  margin-top: 1.5em;
+}
+
+.login__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 1.5em;
+}
+
+.login__links a {
+  text-decoration: underline;
 }
 
 .login__discord-icon {

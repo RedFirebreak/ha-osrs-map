@@ -106,6 +106,13 @@ whether it is an admin (`GET /api/v1/members/{discord_id}`, hub D-100).
   longer one loses the Admin page. While the hub can't be reached, whoever is logged in stays so.
 - A login lasts three days. It is a cookie the page's scripts can't read.
 
+The login page says this to whoever isn't logged in yet: what the site is (under its `SITE_NAME`), that it
+is for the guild's members, that logging in happens at discord.com and what the map reads there (the
+Discord ID and name, which is all the `identify` scope is used for), that it never asks for a RuneScape or
+Jagex login, and that it shows only what players share through the hub. Keep that text true when the login
+changes. A game-themed page with nothing on it but a login button is what a browser's phishing filter takes
+for a fake one: Google listed `scapekeeper.com` for "Deceptive pages" on 2026-10-07.
+
 This needs a hub with D-100 and a **service key**: the hub doesn't tell a personal key who is a member,
 so with one nobody can log in.
 
