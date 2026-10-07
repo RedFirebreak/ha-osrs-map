@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../src/data/api";
 import { pubsub } from "../src/data/pubsub";
@@ -50,6 +52,50 @@ describe("who is signed in", () => {
 });
 
 describe("the login page", () => {
+  afterEach(() => {
+    delete window.siteConfig;
+  });
+
+  it("says what the site is, who it is for and what it reads, and asks for no password", () => {
+    window.siteConfig = { title: "<b>Mock</b> guild" };
+    const page = mount("login-page");
+    const text = page.textContent.replace(/\s+/g, " ");
+
+    // The site's name, as text whatever is in it.
+    expect(page.querySelector(".login__title").textContent).toBe("<b>Mock</b> guild");
+    expect(page.querySelector(".login__title b")).toBeNull();
+    expect(text).toContain("For members of the guild only");
+    expect(text).toContain("the Discord account you use on the guild's hub");
+    expect(text).toContain("You log in at discord.com");
+    // What the server reads with the scope `identify` (discord_routes.rs), and no more.
+    expect(text).toContain("your Discord ID and name, never your email, messages or servers");
+    expect(text).toContain("never asks for your RuneScape or Jagex login");
+    expect(text).toContain("a location kept private on the hub is not shown");
+    expect(text).toContain("Not affiliated with or endorsed by Jagex Ltd.");
+    expect([...page.querySelectorAll(".login__footer a")].map((link) => link.getAttribute("href"))).toEqual([
+      "https://scapekeeper.com",
+      "https://github.com/RedFirebreak/ha-osrs-map",
+    ]);
+    // Nothing to type a login into: the one control is the button that leads to Discord.
+    expect(page.querySelectorAll("input, form")).toHaveLength(0);
+    expect(page.querySelectorAll("button")).toHaveLength(1);
+  });
+
+  it("has a name without a configured one", () => {
+    const page = mount("login-page");
+
+    expect(page.querySelector(".login__title").textContent).toBe("OSRS Guild Map");
+  });
+
+  it("is described to a search engine in the page's head", () => {
+    const index = fs.readFileSync(path.join(__dirname, "../src/index.html"), "utf8");
+    const description = index.match(/<meta\s+name="description"\s+content="([^"]+)"/)?.[1];
+
+    expect(description).toContain("Old School RuneScape guild");
+    expect(description).toContain("never asks for a RuneScape or Jagex login");
+    expect(description).toContain("Not affiliated with Jagex Ltd.");
+  });
+
   it("asks where to sign in when the button is pressed, and goes there", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign });
