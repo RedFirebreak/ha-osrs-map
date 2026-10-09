@@ -295,3 +295,46 @@ player-profile-view .player-stats__name {
   height: 32px;
   object-fit: contain;
 }
+
+.player-profile-view__hiscores {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-profile-view__hiscores th {
+  color: #aaa;
+  font-weight: normal;
+  text-align: right;
+  padding: 2px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.player-profile-view__hiscores td {
+  text-align: right;
+  padding: 2px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.player-profile-view__hiscores th:first-child,
+.player-profile-view__hiscores td:first-child {
+  text-align: left;
+  white-space: normal;
+}
+
+.player-profile-view__hiscores-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-profile-view__hiscores-title {
+  margin-top: 14px;
+}
+
+.player-profile-view__hiscores-as-of {
+  color: #aaa;
+  font-size: 0.85rem;
+}

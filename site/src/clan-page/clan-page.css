@@ -87,7 +87,8 @@ clan-page {
 .clan-page__regions,
 .clan-page__worlds,
 .clan-page__gains,
-.clan-page__loot {
+.clan-page__loot,
+.clan-page__hiscores {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -232,4 +233,22 @@ clan-page {
 
 .clan-page__status:empty {
   display: none;
+}
+
+.clan-page__hiscores {
+  columns: 2 280px;
+  column-gap: 24px;
+}
+
+.clan-page__hiscore {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  break-inside: avoid;
+}
+
+.clan-page__hiscores-value {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }

@@ -7,8 +7,13 @@ import { selection } from "../data/selection";
 import { groupByRegion, groupByWorld } from "../data/regions";
 import { describeEvent } from "../data/hub-format";
 import { formatGp, relativeTime } from "../data/format";
+import { guildBoard, guildBoards } from "../data/hiscores";
 
 const REFRESH_MS = 60000;
+// The hub reads someone's hiscores some ten minutes after they log out.
+const HISCORES_REFRESH_MS = 5 * 60000;
+// Players shown on a hiscores board.
+const HISCORES_SHOWN = 15;
 // The periods the top gainers and the biggest drops can be asked for.
 const PERIODS = [
   ["day", "Today"],
@@ -24,7 +29,7 @@ function statusMessage(error) {
 
 /**
  * The guild at a glance: who is online and where, which worlds, the day's top
- * gainers and drops, and the event feed.
+ * gainers and drops, the guild's own hiscores, and the event feed.
  */
 export class ClanPage extends BaseElement {
   constructor() {
@@ -41,6 +46,7 @@ export class ClanPage extends BaseElement {
     // The route keeps this element and connects it again on every visit.
     this.historyLoaded = false;
     this.leaderboards = [];
+    this.hiscores = [];
     this.topDrop = null;
     this.render();
     document.body.classList.add("clan-page");
@@ -56,6 +62,9 @@ export class ClanPage extends BaseElement {
     this.lootPeriod = this.querySelector(".clan-page__loot-period");
     this.lootList = this.querySelector(".clan-page__loot");
     this.lootStatus = this.querySelector(".clan-page__loot-status");
+    this.hiscoresBoard = this.querySelector(".clan-page__hiscores-board");
+    this.hiscoresList = this.querySelector(".clan-page__hiscores");
+    this.hiscoresStatus = this.querySelector(".clan-page__hiscores-status");
 
     for (const [select, options, value] of [
       [this.gainsPeriod, PERIODS, "day"],
@@ -68,6 +77,8 @@ export class ClanPage extends BaseElement {
     this.eventListener(this.gainsPeriod, "change", () => this.loadGains());
     this.eventListener(this.gainsSkill, "change", () => this.renderGains());
     this.eventListener(this.lootPeriod, "change", () => this.loadLoot());
+    this.eventListener(this.hiscoresBoard, "change", () => this.renderHiscores());
+    this.eventListener(this.hiscoresList, "click", this.handlePlayerClick.bind(this));
     this.eventListener(this.regionsList, "click", this.handleRegionClick.bind(this));
     this.eventListener(this.worldsList, "click", this.handlePlayerClick.bind(this));
     this.eventListener(this.gainsList, "click", this.handlePlayerClick.bind(this));
@@ -81,12 +92,16 @@ export class ClanPage extends BaseElement {
         this.historyLoaded = true;
         this.loadGains();
         this.loadLoot();
+        this.loadHiscores();
       }
     });
     this.every(REFRESH_MS, () => {
       if (!this.historyLoaded) return;
       this.loadGains();
       this.loadLoot();
+    });
+    this.every(HISCORES_REFRESH_MS, () => {
+      if (this.historyLoaded) this.loadHiscores();
     });
   }
 
@@ -219,6 +234,68 @@ export class ClanPage extends BaseElement {
     );
     if (!entries.length && !this.gainsStatus.textContent) {
       this.gainsStatus.textContent = "No XP gained in this period yet.";
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Guild hiscores
+  // ---------------------------------------------------------------------------
+
+  async loadHiscores() {
+    this.hiscoresStatus.textContent = this.hiscores.length ? "" : "Loading...";
+    try {
+      const data = await api.getGuildHiscores();
+      if (!this.isConnected) return;
+      this.hiscores = data.players || [];
+      const selected = this.hiscoresBoard.value || "skill:Overall";
+      this.hiscoresBoard.replaceChildren(
+        ...guildBoards(this.hiscores).map(({ group, options }) => {
+          const optgroup = el("optgroup");
+          optgroup.label = group;
+          optgroup.append(...options.map(({ key, label }) => new Option(label, key)));
+          return optgroup;
+        }),
+      );
+      if ([...this.hiscoresBoard.options].some((option) => option.value === selected)) {
+        this.hiscoresBoard.value = selected;
+      }
+      this.hiscoresStatus.textContent = "";
+      this.renderHiscores();
+    } catch (error) {
+      if (!this.isConnected) return;
+      this.hiscores = [];
+      this.hiscoresList.replaceChildren();
+      this.hiscoresBoard.replaceChildren();
+      this.hiscoresStatus.textContent = statusMessage(error);
+    }
+  }
+
+  renderHiscores() {
+    const key = this.hiscoresBoard.value;
+    const entries = key ? guildBoard(this.hiscores, key).slice(0, HISCORES_SHOWN) : [];
+    this.hiscoresList.replaceChildren(
+      ...entries.map((entry, index) => {
+        const row = el("li", "clan-page__hiscore");
+        row.appendChild(el("span", "clan-page__rank", `${index + 1}`));
+        const member = guildData.members.get(entry.name);
+        row.appendChild(member ? this.playerChip(member) : el("span", "", entry.name));
+        const value =
+          "score" in entry
+            ? entry.score.toLocaleString()
+            : [
+                entry.level === null ? null : `Level ${entry.level.toLocaleString()}`,
+                entry.xp === null ? null : `${formatGp(entry.xp)} xp`,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+        row.appendChild(el("span", "clan-page__hiscores-value", value));
+        return row;
+      }),
+    );
+    if (!entries.length && !this.hiscoresStatus.textContent) {
+      this.hiscoresStatus.textContent = this.hiscores.length
+        ? "Nobody in the guild is on this hiscore yet."
+        : "Nobody shares their hiscores with the guild yet, or the hub hasn't read them.";
     }
   }
 

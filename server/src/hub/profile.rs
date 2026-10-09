@@ -1,5 +1,6 @@
 //! Per-player history from the hub for the site's player profile: XP gains,
-//! play sessions, carried wealth, worn-gear changes and recent events. A hub
+//! play sessions, carried wealth, worn-gear changes, the official hiscores and
+//! recent events. A hub
 //! 404 (the owner doesn't share that category) becomes `not_available`, which
 //! the site shows as "not shared".
 use crate::auth_middleware::Authenticated;
@@ -9,7 +10,7 @@ use crate::hub::convert::equipment;
 use crate::hub::events::event_json;
 use crate::hub::fetch::{cached, history_enabled, parse, HistoryError, Period};
 use crate::hub::models::{
-    HubAccountGains, HubEquipmentHistory, HubEvent, HubItems, HubSessions, HubWealth,
+    HubAccountGains, HubEquipmentHistory, HubEvent, HubHiscores, HubItems, HubSessions, HubWealth,
 };
 use crate::hub::trails::Span;
 use crate::hub::HubContext;
@@ -25,6 +26,9 @@ const GAINS_TTL: Duration = Duration::from_secs(120);
 const SESSIONS_TTL: Duration = Duration::from_secs(60);
 const WEALTH_TTL: Duration = Duration::from_secs(300);
 const GEAR_TTL: Duration = Duration::from_secs(120);
+/// The hub reads the hiscores some ten minutes after a session ends, and at
+/// least once a day; a few minutes late is nothing next to that.
+const HISCORES_TTL: Duration = Duration::from_secs(300);
 const EVENTS_TTL: Duration = Duration::from_secs(30);
 /// The events along a trail. The site asks for them once per trail and again
 /// every ten minutes; what happens in between reaches it with the live feed.
@@ -195,6 +199,23 @@ pub async fn get_player_wealth(
     )
     .await?;
     Ok(HttpResponse::Ok().json(wealth))
+}
+
+/// The official hiscores as the hub last read them (`hiscores`): skills, and
+/// the kill counts, clue scrolls and minigame scores.
+#[get("/hub/players/{member}/hiscores")]
+pub async fn get_player_hiscores(
+    _auth: Authenticated,
+    path: web::Path<String>,
+    config: web::Data<Config>,
+    context: web::Data<HubContext>,
+) -> Result<HttpResponse, HistoryError> {
+    let hiscores: HubHiscores =
+        fetch_for_member(&context, &config, &path, HISCORES_TTL, "hiscores", |id| {
+            (format!("/accounts/{id}/hiscores"), vec![])
+        })
+        .await?;
+    Ok(HttpResponse::Ok().json(hiscores))
 }
 
 /// Worn-gear changes, newest first, each as the 14 equipment slots (id/quantity

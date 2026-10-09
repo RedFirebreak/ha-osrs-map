@@ -135,11 +135,15 @@ so with one nobody can log in.
 2. Give the key at least these categories:
    - `activity` and `location_live` for the map and the player list;
    - `stats`, `equipment` and `inventory` for profiles and graphs;
-   - `events` and `location_history` for the Clan page, the events on the map and trails.
+   - `events` and `location_history` for the Clan page, the events on the map and trails;
+   - `hiscores` for the profile's Hiscores tab and the Clan page's guild hiscores.
 
    The Clan page's "Biggest drops" and the profile's game state need a hub with D-94
    (`/leaderboards/loot`, `game_state`); an older hub gets drops from recent events only. The events
    along a trail need a hub with D-98 (`/events?from=`); an older hub gives a player's newest 500.
+   The hiscores need a hub that reads them (`/hiscores`); with an older hub, or a key without
+   `hiscores`, the profile says the player doesn't share them and the Clan page that they aren't
+   available.
 3. Set these for the backend (it refuses to start without them):
    ```env
    HUB_BASE_URL=https://hub.example.com # without /api/v1
@@ -161,7 +165,7 @@ so with one nobody can log in.
 
 **Players choose what the map sees.** On the hub everything the plugin sends is shared with the guild by
 default, and an account's owner can make each part private: stats, events, activity, live location, the
-location trail, equipment and inventory. An account the hub knew before it shared a part by default keeps
+location trail, equipment, inventory and the official hiscores the hub reads for them. An account the hub knew before it shared a part by default keeps
 that part private until its owner shares it. A player whose position, trail or items don't show up on the
 map should look at the hub's sharing settings.
 
