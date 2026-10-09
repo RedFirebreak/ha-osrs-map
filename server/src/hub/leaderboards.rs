@@ -151,7 +151,10 @@ pub async fn get_guild_hiscores(
     let directory = &context.directory;
     let players: Vec<Value> = accounts
         .into_iter()
-        .filter(|entry| !directory.is_hidden(&entry.account.id))
+        // The answer may be minutes old: who stopped sharing since is left out now.
+        .filter(|entry| {
+            !directory.is_hidden(&entry.account.id) && directory.shares_hiscores(&entry.account.id)
+        })
         .filter(|entry| entry.hiscores.fetched_at.is_some())
         .map(|entry| {
             let name = directory

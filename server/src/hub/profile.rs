@@ -210,6 +210,12 @@ pub async fn get_player_hiscores(
     config: web::Data<Config>,
     context: web::Data<HubContext>,
 ) -> Result<HttpResponse, HistoryError> {
+    history_enabled(&config)?;
+    // The answer is cached for minutes: an owner who stopped sharing their
+    // hiscores is turned away as soon as the sync has seen it (a full read).
+    if !context.directory.shares_hiscores(&hub_id(&context, &path)?) {
+        return Err(HistoryError::Hub(HubError::NotFound));
+    }
     let hiscores: HubHiscores =
         fetch_for_member(&context, &config, &path, HISCORES_TTL, "hiscores", |id| {
             (format!("/accounts/{id}/hiscores"), vec![])

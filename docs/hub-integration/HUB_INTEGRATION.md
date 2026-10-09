@@ -153,7 +153,10 @@ trail the hub gave longest ago, is in whole seconds.
 The hub reads the official OSRS hiscores itself (about ten minutes after a session ends, once a day
 otherwise, at once for a new account) and keeps the last good read. They are not in `/snapshot`;
 the map asks for them only when a profile's Hiscores tab or the Clan page is open, through a 5-minute
-cache. Each account has a `status`: `ok`, `pending` (never read: the tab says so), `not_found` (not on
+cache. The cache doesn't outlast the owner's choice: the backend answers for an account only while
+the latest snapshot lists `hiscores` in its `categories`, so a player who makes them private is gone
+from the tab and the board on the backend's next full read of the hub (every 30 s: a sharing change
+is no new data, so the hub's `since` read doesn't return the account). Each account has a `status`: `ok`, `pending` (never read: the tab says so), `not_found` (not on
 the hiscores under this name) or `mismatch` (the hiscores under the name show less XP than the plugin
 reported). For the last two the hub keeps the last good read, which the tab shows with a note.
 
