@@ -10,7 +10,7 @@ for local development.
 |---|---|---|
 | `GET /me` | Key kind, rate limit and bulk size at start-up; admin "Test connection" | – |
 | `GET /members/{discord_id}` | Who may log in, and who is an admin: asked when someone logs in with Discord, and again every 15 min per person with a session (at most 50 a minute). `member: false` ends their sessions; no answer leaves them. Service keys only: with a personal key, or a hub from before D-100, it is a 404 and nobody can log in | – |
-| `GET /snapshot?since=` (ETag) | Mirrored into the members table every 5 s, full refresh every 2 min | – |
+| `GET /snapshot?since=` (ETag) | Mirrored into the members table every 5 s, full refresh every 30 s; an account that left the key's reach is left out of what the site gets | – |
 | `GET /events?cursor=` | One follower every 5 s into a 1000-event buffer: the Clan feed, the events on the map and its toasts | – |
 | `GET /xp?accounts=` (≤50) | Graphs | 5 min |
 | `GET /leaderboards/gains` | Clan page, the graphs' default players | 5 min |

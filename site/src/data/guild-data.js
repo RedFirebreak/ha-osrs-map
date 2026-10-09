@@ -10,7 +10,9 @@ export class GuildData {
 
   /**
    * Applies one poll of `/api/members`:
-   * `{cursor, roster: [{name, online, last_seen, orphaned}], members: [changed data]}`.
+   * `{cursor, roster: [{name, online, last_seen}], members: [changed data]}`.
+   * A player who leaves the roster (removed, hidden, or no longer shared by
+   * the hub) is dropped here, data and all.
    * Publishes "members-updated" (all members) when the set of names or anyone's
    * online state changes, and "roster-changed" (a Set of names) whenever any
    * member changed at all. Returns the `from_time` for the next poll, or epoch

@@ -142,8 +142,10 @@ impl HubConfig {
 fn default_poll_interval_secs() -> u64 {
     5
 }
+/// How soon an account the hub stops sharing leaves the map: `since` polls
+/// can't tell, only a full snapshot can.
 fn default_full_refresh_secs() -> u64 {
-    120
+    30
 }
 fn default_events_poll_secs() -> u64 {
     5

@@ -149,6 +149,12 @@ struct Harness {
 }
 
 async fn harness() -> Harness {
+    harness_with_full_refresh(3600).await
+}
+
+/// `full_refresh_secs` 0: every poll fetches the full snapshot, as the sync
+/// does every `full_refresh_secs`.
+async fn harness_with_full_refresh(full_refresh_secs: u64) -> Harness {
     let pool = create_test_pool().await;
     fresh_database(&pool).await;
     let hub = Arc::new(Mutex::new(MockHub::default()));
@@ -157,7 +163,7 @@ async fn harness() -> Harness {
     let hub_config = HubConfig {
         base_url,
         api_key: "ohub_test_key".to_string(),
-        full_refresh_secs: 3600,
+        full_refresh_secs,
         ..HubConfig::default()
     };
 
@@ -533,6 +539,49 @@ async fn hidden_members_are_left_alone_until_shown_again() {
     assert_eq!(h.sent(), 2, "shown again: everything is sent");
     assert_eq!(h.member("Alpha").await.unwrap().stats.unwrap()[0], 1);
     assert!(!h.directory.is_hidden("acc-alpha"));
+}
+
+#[tokio::test]
+async fn an_account_the_hub_stops_sharing_leaves_the_map_until_shared_again() {
+    let _guard = TEST_MUTEX.lock().await;
+    let mut h = harness_with_full_refresh(0).await;
+    h.hub.lock().unwrap().accounts = vec![
+        online_account("acc-alpha", "Alpha"),
+        online_account("acc-bravo", "Bravo"),
+    ];
+    h.poll().await.unwrap();
+    assert!(h.roster("Alpha").await.is_some());
+
+    // The owner hides Alpha from the guild (or makes it private): the hub
+    // leaves it out of the snapshot.
+    h.hub
+        .lock()
+        .unwrap()
+        .accounts
+        .retain(|account| account["id"] != "acc-alpha");
+    h.poll().await.unwrap();
+
+    assert!(h.roster("Alpha").await.is_none(), "off the roster");
+    assert!(
+        h.member("Alpha").await.is_none(),
+        "no data, no last position"
+    );
+    assert!(h.roster("Bravo").await.is_some(), "the others stay");
+    let orphaned: i64 = h
+        .scalar("SELECT count(*) FROM guildmap.members WHERE hub_orphaned_at IS NOT NULL")
+        .await;
+    assert_eq!(orphaned, 1, "kept for the admin portal, not deleted");
+
+    // Shared again: back, where the player is now.
+    let mut alpha = online_account("acc-alpha", "Alpha");
+    alpha["location"]["x"] = json!(3200);
+    h.hub.lock().unwrap().accounts.push(alpha);
+    h.poll().await.unwrap();
+    assert!(h.roster("Alpha").await.is_some());
+    assert_eq!(
+        h.member("Alpha").await.unwrap().coordinates.unwrap()[0],
+        3200
+    );
 }
 
 #[tokio::test]
