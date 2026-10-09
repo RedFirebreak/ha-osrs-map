@@ -49,7 +49,10 @@ fn last_updated_sql() -> String {
 const CURSOR_OVERLAP_MS: i64 = 2000;
 
 /// The roster (every visible member with its presence) and the data of the
-/// members that changed at or after `timestamp`.
+/// members that changed at or after `timestamp`. Visible: not hidden by an
+/// admin, and still shared by the hub. A member the hub stopped sharing (its
+/// owner hid it from the guild or made it private) is left out whole, last
+/// position included, until the hub shares it again.
 pub async fn get_members(
     client: &Client,
     timestamp: &DateTime<Utc>,
@@ -68,10 +71,10 @@ pub async fn get_members(
             r#"
 SELECT member_name::text AS member_name, now() AS db_now,
 (hub_online AND hub_last_seen > now() - {ONLINE_CONFIRMATION}) AS online,
-hub_last_seen, hub_orphaned_at IS NOT NULL AS orphaned,
+hub_last_seen,
 {last_updated} AS last_updated,
 {changed}
-FROM guildmap.members WHERE NOT hidden
+FROM guildmap.members WHERE NOT hidden AND hub_orphaned_at IS NULL
 ORDER BY member_name
 "#,
             last_updated = last_updated_sql(),
@@ -93,7 +96,6 @@ ORDER BY member_name
             name: name.clone(),
             online: row.try_get("online")?,
             last_seen: row.try_get("hub_last_seen")?,
-            orphaned: row.try_get("orphaned")?,
         });
         let last_updated: Option<DateTime<Utc>> = row.try_get("last_updated")?;
         if last_updated.is_none_or(|at| at < *timestamp) {

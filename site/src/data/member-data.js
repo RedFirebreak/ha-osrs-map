@@ -17,7 +17,6 @@ export class MemberData {
     }
     this.online = false;
     this.lastSeen = null;
-    this.orphaned = false;
     this.meta = null;
 
     const { hue, color, light } = colorForName(name);
@@ -32,17 +31,13 @@ export class MemberData {
   }
 
   /** Applies a roster entry. Returns whether anything changed. */
-  updatePresence({ online, last_seen, orphaned }) {
+  updatePresence({ online, last_seen }) {
     const lastSeen = last_seen ? new Date(last_seen) : null;
-    const changed =
-      this.online !== online ||
-      this.orphaned !== Boolean(orphaned) ||
-      (this.lastSeen?.getTime() ?? null) !== (lastSeen?.getTime() ?? null);
+    const changed = this.online !== online || (this.lastSeen?.getTime() ?? null) !== (lastSeen?.getTime() ?? null);
     const wentOnline = online && !this.online;
     const wentOffline = !online && this.online;
     this.online = online;
     this.lastSeen = lastSeen;
-    this.orphaned = Boolean(orphaned);
     if (changed) this.publishUpdate("presence", "online");
     if (wentOnline) this.publishUpdate("active");
     if (wentOffline) this.publishUpdate("inactive");

@@ -146,9 +146,7 @@ export class PlayerProfileView extends BaseElement {
     this.badgeEl.title = member.meta?.type_label || "";
 
     const parts = [];
-    if (member.orphaned) {
-      parts.push("Not shared with the guild any more");
-    } else if (member.online) {
+    if (member.online) {
       const currentWorld = world(member);
       parts.push(currentWorld ? `Online · W${currentWorld}` : "Online");
       if (member.region) parts.push(member.region);

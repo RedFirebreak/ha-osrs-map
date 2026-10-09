@@ -33,8 +33,6 @@ pub struct RosterEntry {
     pub name: String,
     pub online: bool,
     pub last_seen: Option<DateTime<Utc>>,
-    /// The hub no longer shares this account.
-    pub orphaned: bool,
 }
 
 /// `GET /api/members`.

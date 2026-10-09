@@ -78,7 +78,11 @@ RuneLite plugin ──pair/events──▶ osrs-data-hub ◀──GET /api/v1/sn
 ```
 
 - The backend polls the hub's `/api/v1/snapshot` with an API key that never leaves the server. It uses
-  `ETag` and `since` for polling, and does a full refresh every two minutes.
+  `ETag` and `since` for polling, and does a full refresh every 30 seconds.
+- A player the hub stops sharing (the owner hid the account from the guild, or made everything private)
+  leaves the map at the next full refresh: off the roster, the map and the profiles, last position
+  included. Only the admin portal still lists it, as "not shared", and it comes back by itself once
+  the hub shares it again.
 - Only what changed is stored, whether the player is online or not. Presence comes from the hub's
   `online` and `last_seen`; if the sync stops for five minutes, everyone shows as offline.
 - The site polls the backend every 2 seconds and gets the roster plus only the players whose data

@@ -183,17 +183,12 @@ export class PlayersPage extends BaseElement {
 
     const status = cell("players-page__status");
     const statusText = document.createElement("span");
-    const orphanedBadge = document.createElement("span");
-    orphanedBadge.className = "players-page__badge";
-    orphanedBadge.textContent = "not shared";
-    orphanedBadge.title = "No longer shared with the guild on the hub";
-    status.append(statusText, orphanedBadge);
+    status.append(statusText);
 
     const row = {
       tr,
       status,
       statusText,
-      orphanedBadge,
       type: cell("players-page__col-type"),
       owner: cell("players-page__col-owner"),
       total: cell("players-page__num"),
@@ -220,7 +215,6 @@ export class PlayersPage extends BaseElement {
 
   patchStatus(row, member) {
     row.status.classList.toggle("players-page__status--online", member.online);
-    row.orphanedBadge.hidden = !member.orphaned;
     if (member.online) {
       const w = world(member);
       setText(row.statusText, w ? `Online W${w}` : "Online");

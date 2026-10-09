@@ -2,7 +2,9 @@
 //!
 //! - Polls with `since` and `If-None-Match`, and fetches the full snapshot at
 //!   start-up and every `full_refresh_secs` to notice accounts that left the
-//!   key's reach (they are marked orphaned, never deleted).
+//!   key's reach. Those are marked orphaned, never deleted: the site no longer
+//!   gets them (`db::get_members`), only the admin portal lists them, and
+//!   they come back when the hub shares them again.
 //! - Sections that changed since they were last sent go to the batcher, whether
 //!   the account is online or not; the batcher stamps what really changed.
 //! - Presence (online, last seen) is written separately: when it flips, and

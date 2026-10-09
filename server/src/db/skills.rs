@@ -141,7 +141,7 @@ pub(crate) async fn get_skills_for_period(
 SELECT member_name, time, s.skills
 FROM guildmap.skills_{} s
 INNER JOIN guildmap.members m ON m.member_id=s.member_id
-WHERE NOT m.hidden
+WHERE NOT m.hidden AND m.hub_orphaned_at IS NULL
 "#,
         match period {
             AggregatePeriod::Day => "day",

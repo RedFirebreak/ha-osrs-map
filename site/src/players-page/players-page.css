@@ -138,19 +138,6 @@ players-page {
   color: var(--green);
 }
 
-.players-page__badge {
-  margin-left: 6px;
-  font-size: 0.8rem;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: #7a5c00;
-  color: #fff;
-}
-
-.players-page__badge[hidden] {
-  display: none;
-}
-
 .players-page__table .players-page__num {
   text-align: right;
   font-variant-numeric: tabular-nums;

@@ -194,7 +194,6 @@ export class PlayerRoster extends BaseElement {
     const row = this.rows.get(member.name);
     if (!row) return;
     row.classList.toggle("player-roster__row--offline", !member.online);
-    row.classList.toggle("player-roster__row--orphaned", member.orphaned);
 
     const currentWorld = world(member);
     row.worldEl.textContent = currentWorld ? `W${currentWorld}` : "";
@@ -224,7 +223,6 @@ export class PlayerRoster extends BaseElement {
   }
 
   placeText(member, now = new Date()) {
-    if (member.orphaned) return "Not shared any more";
     if (!member.online) return member.lastSeen ? `Offline · ${relativeTime(member.lastSeen, now)}` : "Offline";
     if (member.meta?.special_world) return "On a special world";
     return member.region || (member.coordinates ? "Online" : "Online · location private");
