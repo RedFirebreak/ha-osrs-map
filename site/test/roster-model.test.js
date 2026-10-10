@@ -9,7 +9,7 @@ import {
   world,
 } from "../src/data/roster-model";
 import { colorForName, hashName } from "../src/data/player-colors";
-import { formatDuration, formatGp, relativeTime } from "../src/data/format";
+import { formatDuration, formatGp, formatWorlds, relativeTime } from "../src/data/format";
 
 const member = (name, fields = {}) => ({
   name,
@@ -87,6 +87,14 @@ describe("player colours", () => {
 });
 
 describe("hub formatting", () => {
+  it("collapses a session's worlds after three", () => {
+    expect(formatWorlds([395])).toBe("W395");
+    expect(formatWorlds([395, 394, 390])).toBe("W395, W394, W390");
+    expect(formatWorlds(Array.from({ length: 44 }, (_, i) => 300 + i))).toBe("W300, W301, W302 and 41 more");
+    expect(formatWorlds([395, 394, 390, 389], Infinity)).toBe("W395, W394, W390, W389");
+    expect(formatWorlds(undefined)).toBe("");
+  });
+
   it("formats gp amounts", () => {
     expect(formatGp(950)).toBe("950");
     expect(formatGp(1500)).toBe("1.5K");
