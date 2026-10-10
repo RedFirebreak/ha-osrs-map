@@ -362,6 +362,67 @@ pub(crate) struct HubWealthDay {
     pub max_value: Option<i64>,
 }
 
+/// `GET /accounts/{id}/hiscores`: the official hiscores as the hub last read
+/// them. Missing fields default, so a hub that adds one or leaves one out
+/// still gives the site what it can show.
+#[derive(Deserialize, Serialize, Debug)]
+pub(crate) struct HubHiscores {
+    /// `ok`, `pending` (never read yet), `not_found` (not on the hiscores) or
+    /// `mismatch` (less XP than the plugin reported); the last two keep the
+    /// last good read.
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub fetched_at: Option<DateTime<Utc>>,
+    /// `regular`, or the ironman table the account is ranked on as well.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Overall first.
+    #[serde(default)]
+    pub skills: Vec<HubHiscoreSkill>,
+    /// Only those with a score, in Jagex's order.
+    #[serde(default)]
+    pub activities: Vec<HubHiscoreActivity>,
+}
+
+/// One account of `GET /hiscores`.
+#[derive(Deserialize, Debug)]
+pub(crate) struct HubAccountHiscores {
+    pub account: HubAccountRef,
+    #[serde(flatten)]
+    pub hiscores: HubHiscores,
+}
+
+/// `null` is "not listed".
+#[derive(Deserialize, Serialize, Debug)]
+pub(crate) struct HubHiscoreSkill {
+    pub skill: String,
+    #[serde(default)]
+    pub level: Option<i64>,
+    #[serde(default)]
+    pub xp: Option<i64>,
+    #[serde(default)]
+    pub rank: Option<i64>,
+    /// The rank on the account's own (ironman) table.
+    #[serde(default)]
+    pub mode_rank: Option<i64>,
+}
+
+/// A boss, a clue tier or another activity; `score` is a boss's kill count.
+#[derive(Deserialize, Serialize, Debug)]
+pub(crate) struct HubHiscoreActivity {
+    pub activity: String,
+    /// `boss`, `clue` or `activity`.
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub score: Option<i64>,
+    #[serde(default)]
+    pub rank: Option<i64>,
+    #[serde(default)]
+    pub mode_rank: Option<i64>,
+}
+
 /// `GET /accounts/{id}/equipment-history`.
 #[derive(Deserialize, Debug)]
 pub(crate) struct HubEquipmentHistory {

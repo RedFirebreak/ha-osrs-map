@@ -8,6 +8,7 @@ import { Skill, SkillName } from "../data/skill";
 import { carriedValue, shares, totalLevel, world } from "../data/roster-model";
 import { hubErrorMessage } from "../data/hub-format";
 import { formatDuration, formatGp, relativeTime } from "../data/format";
+import { activityLabel, hiscoresView } from "../data/hiscores";
 import { ACCOUNT_TYPE_BADGES } from "../player-roster/player-roster";
 
 const PROFILE_TABS = [
@@ -16,6 +17,7 @@ const PROFILE_TABS = [
   ["activity", "Activity"],
   ["wealth", "Wealth"],
   ["gear", "Gear"],
+  ["hiscores", "Hiscores"],
 ];
 
 const GAIN_PERIODS = [
@@ -180,6 +182,7 @@ export class PlayerProfileView extends BaseElement {
       activity: () => this.renderActivity(),
       wealth: () => this.renderWealth(),
       gear: () => this.renderGear(),
+      hiscores: () => this.renderHiscores(),
     }[tab];
     render();
   }
@@ -441,6 +444,104 @@ export class PlayerProfileView extends BaseElement {
       }
       section.appendChild(list);
     });
+  }
+
+  renderHiscores() {
+    const section = this.section("Official hiscores");
+    if (!shares(this.member, "hiscores")) {
+      this.notShared(section, "their hiscores");
+      return;
+    }
+    this.load(section, async () => {
+      const view = hiscoresView(await api.getPlayerHiscores(this.playerName));
+      if (!this.isConnected) return;
+      const note = (text) => section.appendChild(el("p", "player-profile-view__note", text));
+      if (!view.fetchedAt) {
+        note(
+          view.status === "not_found"
+            ? `${this.playerName} isn't on the official hiscores.`
+            : "The hub hasn't read the hiscores yet.",
+        );
+        return;
+      }
+      const asOf = el(
+        "p",
+        "player-profile-view__summary player-profile-view__hiscores-as-of",
+        `Read ${relativeTime(view.fetchedAt)}${view.modeTable ? ` · ranks on the ${view.modeTable} hiscores` : ""}`,
+      );
+      asOf.title = new Date(view.fetchedAt).toLocaleString();
+      section.appendChild(asOf);
+      // The hub keeps the last good read when a later one failed.
+      if (view.status === "not_found") note(`${this.playerName} isn't on the hiscores any more under this name.`);
+      if (view.status === "mismatch") note("The hiscores under this name are behind what the plugin reported.");
+
+      // An iron account's rank on its own table, and the main table's in the tooltip.
+      const rankOf = (entry) => (view.modeTable ? entry.modeRank : entry.rank);
+      const rankTitle = (entry) =>
+        view.modeTable && entry.rank ? `Rank ${entry.rank.toLocaleString()} on the main hiscores` : "";
+
+      section.appendChild(
+        this.hiscoreTable(
+          ["Skill", "Level", "XP", "Rank"],
+          view.skills.map((skill) => ({
+            icon: skill.name === SkillName.Overall ? "/ui/3579-0.png" : Skill.getIcon(skill.name),
+            cells: [skill.name, skill.level, skill.xp, rankOf(skill)],
+            rankTitle: rankTitle(skill),
+          })),
+        ),
+      );
+
+      for (const [title, list, heading, score, empty] of [
+        ["Bosses", view.bosses, "Boss", "Kills", "No boss on the hiscores yet: most show from 5 kills."],
+        ["Clue scrolls", view.clues, "Tier", "Done", "No clue scrolls on the hiscores yet."],
+        ["Other activities", view.activities, "Activity", "Score", "No other activities on the hiscores yet."],
+      ]) {
+        // Inside the tab's one section: a tab opened meanwhile has a body of its own.
+        section.appendChild(el("h5", "player-profile-view__section-title player-profile-view__hiscores-title", title));
+        if (!list.length) {
+          note(empty);
+          continue;
+        }
+        section.appendChild(
+          this.hiscoreTable(
+            [heading, score, "Rank"],
+            list.map((entry) => ({
+              cells: [activityLabel(entry.name), entry.score, rankOf(entry)],
+              rankTitle: rankTitle(entry),
+            })),
+          ),
+        );
+      }
+    });
+  }
+
+  /** A table of hiscore rows: a name, then numbers ("–" when not ranked), the last one a rank. */
+  hiscoreTable(headings, rows) {
+    const table = el("table", "player-profile-view__hiscores");
+    const head = el("tr");
+    for (const heading of headings) head.appendChild(el("th", "", heading));
+    table.appendChild(el("thead")).appendChild(head);
+    const body = table.appendChild(el("tbody"));
+    for (const row of rows) {
+      const tr = el("tr");
+      const [name, ...numbers] = row.cells;
+      const label = el("span", "player-profile-view__hiscores-name");
+      if (row.icon) {
+        const icon = el("img", "player-profile-view__gain-icon");
+        icon.alt = "";
+        icon.src = row.icon;
+        label.appendChild(icon);
+      }
+      label.appendChild(el("span", "", name));
+      tr.appendChild(el("td")).appendChild(label);
+      numbers.forEach((value, index) => {
+        const cell = el("td", "", value === null ? "–" : value.toLocaleString());
+        if (index === numbers.length - 1 && row.rankTitle) cell.title = row.rankTitle;
+        tr.appendChild(cell);
+      });
+      body.appendChild(tr);
+    }
+    return table;
   }
 }
 

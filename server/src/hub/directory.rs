@@ -1,7 +1,7 @@
 //! Which hub account belongs to which member, kept in memory so the history
 //! endpoints don't query the database on every request. Loaded at start-up and
-//! kept current by the sync (binds, renames) and by admin actions (delete,
-//! hide).
+//! kept current by the sync (binds, renames, who shares their hiscores) and by
+//! admin actions (delete, hide).
 use crate::db;
 use crate::error::ApiError;
 use deadpool_postgres::Client;
@@ -14,6 +14,8 @@ struct Bindings {
     id_by_name: HashMap<String, String>,
     /// Hub accounts of members an admin hid.
     hidden: HashSet<String>,
+    /// Hub accounts whose hiscores the key may read, as of the latest sync.
+    hiscores: HashSet<String>,
 }
 
 #[derive(Clone, Default)]
@@ -73,6 +75,28 @@ impl HubDirectory {
             .read()
             .expect("hub directory lock poisoned")
             .hidden
+            .contains(hub_id)
+    }
+
+    /// Records whether the key may read the hiscores of a hub account (its
+    /// `categories` in the snapshot).
+    pub(crate) fn set_shares_hiscores(&self, hub_id: &str, shares: bool) {
+        let mut bindings = self.0.write().expect("hub directory lock poisoned");
+        if shares {
+            bindings.hiscores.insert(hub_id.to_owned());
+        } else {
+            bindings.hiscores.remove(hub_id);
+        }
+    }
+
+    /// Whether the latest sync saw the hub account share its hiscores. The
+    /// hiscores are cached for minutes; this is what makes an owner who stops
+    /// sharing them disappear on the sync's next full read instead.
+    pub fn shares_hiscores(&self, hub_id: &str) -> bool {
+        self.0
+            .read()
+            .expect("hub directory lock poisoned")
+            .hiscores
             .contains(hub_id)
     }
 
@@ -137,5 +161,15 @@ mod tests {
         assert!(directory.is_hidden("acc-3"));
         directory.set_hidden("acc-3", false);
         assert!(!directory.is_hidden("acc-3"));
+    }
+
+    #[test]
+    fn knows_who_shares_their_hiscores_only_once_the_sync_said_so() {
+        let directory = HubDirectory::default();
+        assert!(!directory.shares_hiscores("acc-1"));
+        directory.set_shares_hiscores("acc-1", true);
+        assert!(directory.shares_hiscores("acc-1"));
+        directory.set_shares_hiscores("acc-1", false);
+        assert!(!directory.shares_hiscores("acc-1"));
     }
 }

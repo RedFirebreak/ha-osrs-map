@@ -20,6 +20,8 @@ for local development.
 | `GET /accounts/{id}/sessions` | Profile → Activity (play time), and the sessions offered as the time of the trails (7 days; the site asks again every minute while a trail is on) | 1 min |
 | `GET /accounts/{id}/wealth` | Profile → Wealth | 5 min |
 | `GET /accounts/{id}/equipment-history` | Profile → Gear | 2 min |
+| `GET /accounts/{id}/hiscores` | Profile → Hiscores: skills, boss kill counts, clue scrolls and other activities, with the rank on the account's own ironman table for an iron. See "Hiscores" below | 5 min |
+| `GET /hiscores` | Clan page → Guild hiscores: everyone whose hiscores the key may read, in one request | 5 min |
 | `GET /events?accounts=` | Profile → Activity (a player's recent events) | 30 s |
 | `GET /events?accounts=&from=&to=` | The events marked on a trail, over its length (`to` only for a session that is over): pages of 500, newest first, until `next_cursor` is null or 2000 events. When the map leaves out small drops, drops (`types=loot,pk_loot&min_value=`, from the smallest drop the map shows) are read apart from the other kinds, so a trail costs 2 to 8 requests; with every drop shown it is one read of all kinds, 1 to 4 requests. The site asks once per trail and again every 10 min. A hub from before D-98 ignores `from` and hands back a feed cursor; the backend then keeps that one page | 2 min |
 
@@ -146,6 +148,29 @@ The response has `"v": 3`. Times are whole seconds, except each trail's own `as_
 millisecond: the site holds it against the moment it saw a marker move. The answer's `as_of`, of the
 trail the hub gave longest ago, is in whole seconds.
 
+## Hiscores
+
+The hub reads the official OSRS hiscores itself (about ten minutes after a session ends, once a day
+otherwise, at once for a new account) and keeps the last good read. They are not in `/snapshot`;
+the map asks for them only when a profile's Hiscores tab or the Clan page is open, through a 5-minute
+cache. The cache doesn't outlast the owner's choice: the backend answers for an account only while
+the latest snapshot lists `hiscores` in its `categories`, so a player who makes them private is gone
+from the tab and the board on the backend's next full read of the hub (every 30 s: a sharing change
+is no new data, so the hub's `since` read doesn't return the account). Each account has a `status`: `ok`, `pending` (never read: the tab says so), `not_found` (not on
+the hiscores under this name) or `mismatch` (the hiscores under the name show less XP than the plugin
+reported). For the last two the hub keeps the last good read, which the tab shows with a note.
+
+The hub sends only activities with a score, each with a `kind` (`boss`, `clue`, `activity`); the map
+shows a kind it doesn't know with the other activities. `null` is "not listed": a skill below the
+hiscores' threshold, a boss with fewer kills than the hiscores list (5 for most). `mode` names an iron
+account's own table (`ironman`, `hardcore_ironman`, `ultimate_ironman`), and `mode_rank` is the rank on
+it, which the map shows in place of the main rank; the main rank is in its tooltip. Hiscore diffs
+are never events, here or on the hub.
+
+The Clan page ranks the guild on any skill (by XP) or on any boss, clue tier or activity someone has
+a score in. A player hidden from the guild (D-104) is left out of it, as from the other boards, and
+so is an account the hub hasn't read yet.
+
 ## Categories
 
 The hub shares every category with the guild by default (D-96). An account the hub knew before a
@@ -165,6 +190,9 @@ off the account's `categories` empties what the map stored for it, in the databa
 | `stats`         | the skills (the history is kept)   |
 | `inventory`     | the inventory and its value        |
 | `equipment`     | the equipment and its value        |
+
+`hiscores` holds nothing the map stores: the profile's Hiscores tab says "not shared" for a player
+whose `categories` leave it out, and the hub leaves them out of `/hiscores`.
 
 A field of a category the key can read that has nothing new (a location the hub calls `stale` after a
 logout, a special world, something the plugin never sent) leaves what the map has: a player who logged
@@ -186,5 +214,6 @@ out stays where they were last seen.
 | A trail point per game tick, 20,000 to an answer, `truncated` | D-102 | osrs-data-hub PR #48 |
 | `via` on every trail point: how the player got there | D-103 | osrs-data-hub PR #49 |
 | `instance` as a `via`: a walk into the next room of a raid | D-103 | osrs-data-hub PR #53 |
+| The official hiscores: `GET /accounts/{id}/hiscores`, `GET /hiscores`, the `hiscores` category | – | osrs-data-hub, hiscores sync (merges before this map's hiscores change) |
 
 Push to keys (webhooks or a key-authenticated stream) was deferred (D-93); polling stays the contract.

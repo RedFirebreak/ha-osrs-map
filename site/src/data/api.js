@@ -202,6 +202,15 @@ class Api {
     return this.getHubJson(`gains?period=${encodeURIComponent(period)}`);
   }
 
+  /**
+   * The official hiscores of everyone in the guild who shares them, as the
+   * hub last read them: `{players: [{name, mode, fetched_at, skills,
+   * activities}]}`.
+   */
+  async getGuildHiscores() {
+    return this.getHubJson("hiscores");
+  }
+
   /** The period's most valuable drops: `{period, partial, entries: [{rank, event}]}`. */
   async getLootLeaderboard(period, limit = 10) {
     return this.getHubJson(`leaderboards/loot?period=${encodeURIComponent(period)}&limit=${limit}`);
@@ -225,6 +234,14 @@ class Api {
 
   async getPlayerGearHistory(memberName, days = 30) {
     return this.getHubJson(`${this.playerPath(memberName, "equipment-history")}?days=${days}`);
+  }
+
+  /**
+   * The player's official hiscores as the hub last read them: `{status,
+   * fetched_at, skills, activities, iron}` (see data/hiscores.js).
+   */
+  async getPlayerHiscores(memberName) {
+    return this.getHubJson(this.playerPath(memberName, "hiscores"));
   }
 
   async getPlayerEvents(memberName, limit = 50) {

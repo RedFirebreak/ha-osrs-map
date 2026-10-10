@@ -7,7 +7,7 @@
 // around well-known places; about 70 % are online. Every fourth account keeps
 // its inventory, equipment and location history private, like an account from
 // before the hub shared those by default (its D-96) whose owner never changed
-// that, so its history endpoints answer 404.
+// that, so its history endpoints answer 404. It keeps its hiscores private too.
 //
 // Serves what the map's backend asks the hub for, following the hub's
 // docs/API.md as of D-103: /me, /snapshot (ETag/If-None-Match, with
@@ -16,6 +16,10 @@
 // (a point per game tick with `via`, `from`/`to`, 20,000 points at most and
 // `truncated`; MOCK_HUB_TRAIL=minute mimics a hub from before D-102: a point
 // a minute and no `via`),
+// the official hiscores of an account (/accounts/{id}/hiscores) and of all of
+// them (/hiscores; the hub's hiscores/api.md: of the accounts, the third has
+// never been read, the fifth is no longer on the hiscores, the others were
+// read an hour or two ago),
 // /leaderboards/gains, /leaderboards/loot and /events (the cursor feed, and
 // with `from` a time range read newest first; types, accounts, min_value).
 // MOCK_HUB_EVENTS_RANGE=off mimics a hub from before the range read, which
@@ -66,7 +70,7 @@ const SKILLS = [
 // that has no data for a skill yet (it then rejects /xp requests naming it).
 const UNKNOWN = new Set((process.env.MOCK_HUB_UNKNOWN_SKILLS || "").split(",").map((s) => s.trim().toLowerCase()));
 const KNOWN_SKILLS = new Set(["overall", ...SKILLS.map((s) => s.toLowerCase())].filter((s) => !UNKNOWN.has(s)));
-const ALL_CATEGORIES = ["stats", "events", "activity", "location_live", "location_history", "equipment", "inventory"];
+const ALL_CATEGORIES = ["stats", "events", "activity", "location_live", "location_history", "equipment", "inventory", "hiscores"];
 const DEFAULT_CATEGORIES = ["stats", "events", "activity", "location_live"];
 const TYPES = ["Normal", "Ironman", "Ultimate ironman", "Hardcore ironman", "Group ironman"];
 const started = Date.now();
@@ -285,6 +289,53 @@ function inventoryItems(account) {
     { id: 995, name: "Coins", quantity: 1_000_000 * (account.phase + 1), ge_price: 1, ha_price: 1, equipment_slot: null, inventory_slot: 0 },
     { id: 385, name: "Shark", quantity: 1, ge_price: 700, ha_price: 0, equipment_slot: null, inventory_slot: 27 },
   ];
+}
+
+// What the hiscores list besides skills, as Jagex names them, with the hub's kind.
+const HISCORE_ACTIVITIES = [
+  ["Clue Scrolls (all)", "clue"], ["Clue Scrolls (easy)", "clue"], ["Clue Scrolls (medium)", "clue"],
+  ["Clue Scrolls (hard)", "clue"], ["Clue Scrolls (elite)", "clue"], ["Clue Scrolls (master)", "clue"],
+  ["LMS - Rank", "activity"], ["Soul Wars Zeal", "activity"], ["Rifts closed", "activity"],
+  ["Collections Logged", "activity"], ["Barrows Chests", "boss"], ["Chambers of Xeric", "boss"],
+  ["General Graardor", "boss"], ["Kree'Arra", "boss"], ["Theatre of Blood", "boss"],
+  ["Tombs of Amascut", "boss"], ["TzTok-Jad", "boss"], ["TzKal-Zuk", "boss"], ["Vorkath", "boss"],
+  ["Wintertodt", "boss"], ["Zulrah", "boss"],
+];
+const HISCORE_MODES = { 1: "ironman", 2: "ultimate_ironman", 3: "hardcore_ironman" };
+
+// An account's hiscores as the hub last read them, the same on every request.
+function hiscores(account) {
+  const index = accounts.indexOf(account);
+  const mode = HISCORE_MODES[account.type] || "regular";
+  const base = { account: ref(account), mode };
+  if (index === 2) return { ...base, status: "pending", fetched_at: null, skills: [], activities: [] };
+  const iron = mode !== "regular";
+  const modeRank = (rank) => (iron && rank !== null ? Math.max(1, Math.floor(rank / 25)) : null);
+  // Read before this session, so a little behind what the plugin says.
+  const skillList = SKILLS.map((skill, i) => {
+    const xp = Math.floor(account.xp / (i + 2));
+    const rank = 5_000 + ((account.phase * 7919 + i * 104_729) % 900_000);
+    return { skill, level: level(xp), xp, rank, mode_rank: modeRank(rank) };
+  });
+  const overallXp = skillList.reduce((sum, s) => sum + s.xp, 0);
+  const overallRank = 1_000 + ((account.phase * 31_337) % 400_000);
+  const activityList = HISCORE_ACTIVITIES.map(([activity, kind], i) => {
+    const score = (account.phase * 37 + i * 53) % 9 === 0 ? 0 : 5 + ((account.phase * 97 + i * 211) % 1_500);
+    const rank = 100 + ((account.phase * 4_253 + i * 17_389) % 250_000);
+    return { activity, kind, score, rank, mode_rank: modeRank(rank) };
+  });
+  // All clue scrolls are the tiers together.
+  activityList[0].score = activityList.filter((a) => a.kind === "clue").slice(1).reduce((sum, a) => sum + a.score, 0);
+  return {
+    ...base,
+    status: index === 4 ? "not_found" : "ok",
+    fetched_at: new Date(started - (1 + (account.phase % 2)) * 3600_000).toISOString(),
+    skills: [
+      { skill: "Overall", level: skillList.reduce((sum, s) => sum + s.level, 0), xp: overallXp, rank: overallRank, mode_rank: modeRank(overallRank) },
+      ...skillList,
+    ],
+    activities: activityList.filter((a) => a.score > 0),
+  };
 }
 
 const value = (items) => items.reduce((sum, item) => sum + item.ge_price * item.quantity, 0);
@@ -787,6 +838,10 @@ const server = http.createServer((req, res) => {
       }
       return ok(res, { ...base, days });
     }
+    if (sub === "/hiscores") {
+      if (!shares(account, "hiscores")) return notFound(res);
+      return ok(res, hiscores(account));
+    }
     if (sub === "/equipment-history") {
       if (!shares(account, "equipment")) return notFound(res);
       const current = equipmentItems(account);
@@ -799,6 +854,15 @@ const server = http.createServer((req, res) => {
       });
     }
     return notFound(res, `No mock for ${path}`);
+  }
+
+  if (path === "/hiscores") {
+    const ids = (url.searchParams.get("accounts") || "").split(",").filter(Boolean);
+    if (ids.length > 50) return invalid(res, "at most 50 accounts");
+    if (!ids.length) return ok(res, accounts.filter((a) => shares(a, "hiscores")).map(hiscores));
+    const selected = ids.map(findAccount);
+    if (selected.some((a) => !a || !shares(a, "hiscores"))) return notFound(res);
+    return ok(res, selected.map(hiscores));
   }
 
   if (path === "/leaderboards/gains") {

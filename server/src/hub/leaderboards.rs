@@ -1,11 +1,11 @@
-//! The guild's leaderboards from the hub: who gained the most XP, and the
-//! most valuable drops.
+//! The guild's leaderboards from the hub: who gained the most XP, the most
+//! valuable drops, and everyone's official hiscores.
 use crate::auth_middleware::Authenticated;
 use crate::config::Config;
 use crate::hub::client::HubError;
 use crate::hub::events::{event_json, EventFilter};
 use crate::hub::fetch::{cached, history_enabled, HistoryError, Period};
-use crate::hub::models::{HubEvent, HubLeaderboards, HubLootLeaderboard};
+use crate::hub::models::{HubAccountHiscores, HubEvent, HubLeaderboards, HubLootLeaderboard};
 use crate::hub::HubContext;
 use actix_web::{get, web, HttpResponse};
 use chrono::{Duration as ChronoDuration, Utc};
@@ -15,6 +15,9 @@ use std::time::Duration;
 
 const GAINS_BOARD_TTL: Duration = Duration::from_secs(300);
 const LOOT_BOARD_TTL: Duration = Duration::from_secs(60);
+/// The hub reads a player's hiscores some ten minutes after their session
+/// ends, and at least once a day.
+const HISCORES_TTL: Duration = Duration::from_secs(300);
 /// The drops asked of the hub; a request for fewer is cut from the same answer.
 const LOOT_BOARD_SIZE: usize = 50;
 
@@ -134,6 +137,39 @@ pub async fn get_loot_leaderboard(
     })))
 }
 
+/// The official hiscores of everyone whose hiscores the key may read, as the
+/// hub last read them: the site ranks the guild by a skill or an activity.
+#[get("/hub/hiscores")]
+pub async fn get_guild_hiscores(
+    _auth: Authenticated,
+    config: web::Data<Config>,
+    context: web::Data<HubContext>,
+) -> Result<HttpResponse, HistoryError> {
+    history_enabled(&config)?;
+    let accounts: Vec<HubAccountHiscores> =
+        cached(&context, "hiscores", HISCORES_TTL, "/hiscores", &[]).await?;
+    let directory = &context.directory;
+    let players: Vec<Value> = accounts
+        .into_iter()
+        // The answer may be minutes old: who stopped sharing since is left out now.
+        .filter(|entry| {
+            !directory.is_hidden(&entry.account.id) && directory.shares_hiscores(&entry.account.id)
+        })
+        .filter(|entry| entry.hiscores.fetched_at.is_some())
+        .map(|entry| {
+            let name = directory
+                .member_name(&entry.account.id)
+                .unwrap_or(entry.account.name);
+            let mut player = serde_json::to_value(entry.hiscores).unwrap_or(Value::Null);
+            if let Value::Object(fields) = &mut player {
+                fields.insert("name".to_owned(), Value::String(name));
+            }
+            player
+        })
+        .collect();
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "players": players })))
+}
+
 /// The most valuable buffered drops of the period, for hubs without the loot leaderboard.
 fn loot_from_buffer(context: &HubContext, period: Period) -> Vec<HubEvent> {
     let since = Utc::now() - ChronoDuration::days(period.days());
@@ -160,6 +196,30 @@ fn loot_from_buffer(context: &HubContext, period: Period) -> Vec<HubEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_hiscores_of_several_accounts_and_passes_them_on() {
+        // The shape of the hub's hiscores/api.md, with a field it may add later.
+        let accounts: Vec<HubAccountHiscores> = serde_json::from_value(serde_json::json!([
+            {
+                "account": { "id": "a1", "name": "Alpha" },
+                "status": "ok",
+                "fetched_at": "2026-10-09T21:40:00.000Z",
+                "mode": "ironman",
+                "skills": [{ "skill": "Overall", "level": 2277, "xp": 312000000, "rank": 91000, "mode_rank": 4100 }],
+                "activities": [{ "activity": "Zulrah", "kind": "boss", "score": 512, "rank": 12000, "mode_rank": null, "new": 1 }]
+            },
+            { "account": { "id": "a2", "name": "Bravo" }, "status": "pending", "fetched_at": null, "mode": "regular", "skills": [], "activities": [] }
+        ]))
+        .unwrap();
+        assert_eq!(accounts[0].account.name, "Alpha");
+        assert!(accounts[1].hiscores.fetched_at.is_none());
+        let passed_on = serde_json::to_value(&accounts[0].hiscores).unwrap();
+        assert_eq!(passed_on["mode"], "ironman");
+        assert_eq!(passed_on["skills"][0]["mode_rank"], 4100);
+        assert_eq!(passed_on["activities"][0]["kind"], "boss");
+        assert_eq!(passed_on["activities"][0]["mode_rank"], Value::Null);
+    }
 
     #[test]
     fn a_leaderboard_goes_back_a_month_at_most() {

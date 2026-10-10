@@ -240,6 +240,10 @@ impl HubSync {
         if known.hidden {
             return Ok(());
         }
+        directory.set_shares_hiscores(
+            &account.id,
+            account.categories.iter().any(|shared| shared == "hiscores"),
+        );
 
         if known.member_name != account.name {
             known.member_name = follow_rename(client, account, &known.member_name).await?;
