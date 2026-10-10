@@ -58,3 +58,13 @@ export function formatDuration(ms) {
   const days = Math.floor(hours / 24);
   return `${days}d ${hours % 24}h`;
 }
+
+/** [395, 394, 390, 389, 402] → "W395, W394, W390 and 2 more"; a world hopper can visit a hundred. */
+export function formatWorlds(worlds, shown = 3) {
+  const list = worlds || [];
+  const named = list
+    .slice(0, shown)
+    .map((w) => `W${w}`)
+    .join(", ");
+  return list.length > shown ? `${named} and ${list.length - shown} more` : named;
+}

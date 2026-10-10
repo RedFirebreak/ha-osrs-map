@@ -7,7 +7,7 @@ import { Item } from "../data/item";
 import { Skill, SkillName } from "../data/skill";
 import { carriedValue, shares, totalLevel, world } from "../data/roster-model";
 import { hubErrorMessage } from "../data/hub-format";
-import { formatDuration, formatGp, relativeTime } from "../data/format";
+import { formatDuration, formatGp, formatWorlds, relativeTime } from "../data/format";
 import { activityLabel, hiscoresView } from "../data/hiscores";
 import { ACCOUNT_TYPE_BADGES } from "../player-roster/player-roster";
 
@@ -348,11 +348,8 @@ export class PlayerProfileView extends BaseElement {
           "player-profile-view__session-length",
           session.ended_at ? formatDuration(session.duration_ms) : "now",
         );
-        const worlds = el(
-          "span",
-          "player-profile-view__session-worlds",
-          (session.worlds || []).map((w) => `W${w}`).join(", "),
-        );
+        const worlds = el("span", "player-profile-view__session-worlds", formatWorlds(session.worlds));
+        worlds.title = formatWorlds(session.worlds, Infinity);
         row.append(when, worlds, length);
         ul.appendChild(row);
       }
