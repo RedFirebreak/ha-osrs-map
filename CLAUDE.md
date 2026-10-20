@@ -49,8 +49,6 @@ written down in the stack's README.
 
 ## Before committing
 
-- `site/build.js` rewrites the tracked `site/public/data/map.json`: run
-  `git checkout -- site/public/data/map.json` first, and don't `git add -A`.
 - The server's integration tests drop the schema of their database. Always set `TEST_DATABASE_URL`
   to a throwaway one (see the traps in docs/DEV-STACK.md).
 - Checks: `npm test`, `npm run lint` and `npm run format:check` in `site/`; `cargo test` in `server/`.

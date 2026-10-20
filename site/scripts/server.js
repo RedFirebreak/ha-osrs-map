@@ -58,12 +58,20 @@ const iconsBaseUrl = process.env.ICONS_BASE_URL?.trim().replace(/\/+$/, "");
 if (iconsBaseUrl === undefined) console.log("Icons from the default CDN");
 else console.log(iconsBaseUrl ? `Icons from ${iconsBaseUrl}` : "Icons disabled (ICONS_BASE_URL is empty)");
 
+// The world map's tiles, names and icons come from osrs-icons too, at the same address unless
+// MAP_BASE_URL points at a mirror. Unset or empty, the page uses its default (src/canvas-map/map-data.js).
+const mapBaseUrl = process.env.MAP_BASE_URL?.trim().replace(/\/+$/, "") || undefined;
+console.log(mapBaseUrl ? `Map from ${mapBaseUrl}` : "Map from the default CDN");
+
 const injectConfig = (html) => {
   const siteTitle = process.env.SITE_TITLE || DEFAULT_NAME;
   const siteName = process.env.SITE_NAME || DEFAULT_NAME;
   // JSON.stringify keeps quotes in the names from breaking out of the script; "<" is
   // escaped so a name can't close the script tag.
-  const config = JSON.stringify({ title: siteName, pageTitle: siteTitle, iconsBaseUrl }).replace(/</g, "\\u003c");
+  const config = JSON.stringify({ title: siteName, pageTitle: siteTitle, iconsBaseUrl, mapBaseUrl }).replace(
+    /</g,
+    "\\u003c",
+  );
   return html
     .replace("</head>", `<script>window.siteConfig = ${config};</script></head>`)
     .replace(`<title>${DEFAULT_NAME}</title>`, `<title>${escapeHtml(siteTitle)}</title>`);
@@ -139,9 +147,10 @@ if (backend) {
 
 // Everything else is a page of the site. "/{*path}" is every path, the root included.
 app.get("/{*path}", function (request, response) {
-  // Icons moved to the icon CDN; old /icons/ and /ui/ sprite URLs get a 404, not the page.
+  // Icons and the map's tiles moved to the icon CDN; their old URLs get a 404, not the page.
   if (
     (request.path.includes("/map") && request.path.includes(".png")) ||
+    request.path.startsWith("/map/") ||
     request.path.startsWith("/icons/") ||
     request.path.startsWith("/ui/")
   ) {

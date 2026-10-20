@@ -114,7 +114,7 @@ describe("the terrain, far zoomed out", () => {
     const map = createFarMap(0.1);
     map.view = { left: 8, right: 9, top: 32, bottom: 31 };
     map.drawMapSquaresInView(true);
-    expect(sources(map)).toEqual(["/map/0_8_32.webp"]);
+    expect(sources(map)).toEqual(["/map/tiles/0_8_32.webp"]);
   });
 
   it("is the map tiles themselves on a floor without levels", () => {
@@ -124,7 +124,7 @@ describe("the terrain, far zoomed out", () => {
     map.plane = 2;
     map.view = { left: 8, right: 9, top: 32, bottom: 31 };
     map.drawMapSquaresInView(true);
-    expect(sources(map)).toEqual(["/map/1_8_32.webp"]);
+    expect(sources(map)).toEqual(["/map/tiles/1_8_32.webp"]);
   });
 
   it("is the map tiles themselves from zoom 0.5 up", () => {
@@ -132,7 +132,7 @@ describe("the terrain, far zoomed out", () => {
     map.validLevelTiles = { 1: levelOf(map, [[4, 16]]), 3: levelOf(map, [[1, 4]]) };
     map.view = { left: 8, right: 9, top: 32, bottom: 31 };
     map.drawMapSquaresInView(true);
-    expect(sources(map)).toEqual(["/map/0_8_32.webp"]);
+    expect(sources(map)).toEqual(["/map/tiles/0_8_32.webp"]);
   });
 
   it("clears where the level has no tile", () => {
@@ -294,6 +294,7 @@ describe("the names, far zoomed out", () => {
     const map = createFarMap(zoom);
     map.mapLabels = { 8: { 32: { 0: [...LABELS[0], ...LABELS[1]] } }, 14: { 32: { 0: LABELS[2] } } };
     map.mapLabelImages = new Map();
+    map.labelUrl = (id) => `https://icons.test/map/labels/${id}.webp`;
     if (loaded) {
       for (const [x, y, id] of LABELS) {
         const key = map.coordinateKey(...map.gamePositionToCanvas(x, y));
@@ -364,22 +365,61 @@ describe("the map's data", () => {
   it("says which coarse tiles and which region names there are", async () => {
     const map = createMap();
     await load(map, {
-      tiles: [[map.cantor(8, 32)], [], [], []],
-      icons: {},
-      labels: {},
-      links: {},
-      levels: { 3: [[map.cantor(1, 4)], [], [], []] },
-      majorLabels: [458, 317],
+      tiles: [["8_32"], [], [], []],
+      levels: { 3: [["1_4"], [], [], []] },
+      icons: { sheet: "icons/abc.webp", size: 15, at: {} },
+      labels: { files: [], at: {}, major: [458, 317] },
     });
+    expect(map.validTiles[0].has(map.cantor(8, 32))).toBe(true);
     expect(map.validLevelTiles[3][0].has(map.cantor(1, 4))).toBe(true);
     expect(map.majorLabels.get(458)).toBe(0);
     expect(map.majorLabels.get(317)).toBe(1);
   });
 
-  it("may be from before there were levels", async () => {
+  it("is read from osrs-icons, with the links from this site", async () => {
     const map = createMap();
-    await load(map, { tiles: [[], [], [], []], icons: {}, labels: {}, links: {} });
-    expect(map.validLevelTiles).toEqual({});
-    expect(map.majorLabels.size).toBe(0);
+    const fetched = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        fetched.push(url);
+        const data = url.endsWith("map_links.json")
+          ? { "3200,3200,0": [3200, 9600, 0] }
+          : {
+              tiles: [["50_50", "50_150"], [], [], []],
+              levels: {},
+              icons: { sheet: "icons/abc.webp", size: 15, at: { 50: { 50: { 3: [3222, 3219, 0] } } } },
+              labels: { files: ["f00d"], at: { 50: { 50: { 0: [3220, 3220, 0] } } }, major: [] },
+            };
+        return { ok: true, json: async () => data };
+      }),
+    );
+    try {
+      await map.getMapJson();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetched.sort()).toEqual(["/data/map_links.json", "https://icons.scapekeeper.com/data/map.json"]);
+    expect(map.locationIconsSheet.src).toBe("https://icons.scapekeeper.com/map/icons/abc.webp");
+    expect(map.labelUrl(0)).toBe("https://icons.scapekeeper.com/map/labels/f00d.webp");
+    expect(map.labelUrl(1)).toBeNull();
+    expect(map.locations[50][50][3]).toEqual([3222, 3219, 0]);
+    expect(map.linksByPlane[0]).toHaveLength(1);
+  });
+
+  it("is not there when osrs-icons can't be reached", async () => {
+    const map = createMap();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 503 })),
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await map.getMapJson();
+    } finally {
+      vi.unstubAllGlobals();
+      error.mockRestore();
+    }
+    expect(map.validTiles).toBeUndefined();
   });
 });

@@ -3,20 +3,12 @@ const path = require("path");
 const { minify } = require("terser");
 const { performance } = require("perf_hooks");
 const CleanCSS = require("clean-css");
-const { buildMapJson } = require("./scripts/map-json");
 
 const cleanCSSInstance = new CleanCSS({});
 const productionMode = process.argv.some((arg) => arg === "--prod");
 if (productionMode) {
   console.log("Production mode is enabled");
 }
-
-const mapJsonPlugin = {
-  name: "mapTilesJson",
-  setup() {
-    fs.writeFileSync("public/data/map.json", JSON.stringify(buildMapJson("public")));
-  },
-};
 
 const componentBuildPlugin = {
   name: "componentBuild",
@@ -142,7 +134,7 @@ function build() {
       minify: false,
       format: "esm",
       outfile: "public/app.js",
-      plugins: [componentBuildPlugin, minifyJsPlugin, htmlBuildPlugin, buildLoggingPlugin, mapJsonPlugin],
+      plugins: [componentBuildPlugin, minifyJsPlugin, htmlBuildPlugin, buildLoggingPlugin],
     })
     .catch((error) => console.error(error));
 }

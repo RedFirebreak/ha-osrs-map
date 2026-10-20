@@ -214,6 +214,7 @@ a file for local development.
 | `DISCORD_API_BASE` | `https://discord.com/api` | Only for development: a stand-in for Discord, such as the mock hub's (see [docs/DEV-STACK.md](docs/DEV-STACK.md)). Whoever answers there decides who logs in, so never set it on a real site. `DISCORD_AUTHORIZE_URL` overrides the page the browser is sent to, when the browser reaches the stand-in under another address than the backend does. |
 | `HOST_URL`, `SITE_TITLE`, `SITE_NAME` | | Frontend: backend URL for its `/api` proxy, and branding. |
 | `ICONS_BASE_URL` | `https://icons.scapekeeper.com` | Frontend: where browsers load item, skill and equipment-slot icons from (see [Icons](#icons)). Empty turns icons off. |
+| `MAP_BASE_URL` | `https://icons.scapekeeper.com` | Frontend: where browsers load the world map's tiles, place names and map icons from (see [Icons](#icons)). Empty means the default; the map can't be turned off. |
 
 ### Icons
 
@@ -228,7 +229,11 @@ from the shared [osrs-icons](https://github.com/RedFirebreak/osrs-icons) CDN at
   send `Access-Control-Allow-Origin: *`, and set `ICONS_BASE_URL` to that root's URL (no trailing slash
   needed).
 
-Map tiles and labels are still served by the site itself.
+The world map comes from osrs-icons too: its tiles, the coarser levels for zooming far out, the place
+names and the map icons, all drawn from each game update's cache, with `data/map.json` saying what
+there is. `MAP_BASE_URL` is its address, the same CDN unless set; a self-hosted copy of the release
+serves both, so set both settings to it. Only the links between places (`site/public/data/map_links.json`,
+the stairs and ladders the map lets you click through) are still this repository's own.
 
 ## Development
 
@@ -279,24 +284,13 @@ point them at a database you don't mind wiping.
 
 ### Game data
 
-The item list (`site/public/data/item_data.json`) and the map (`site/public/map/`, and `map_icons.json`,
-`map_labels.json` and `map_links.json` beside the item list) are what group-ironmen had generated from the
-game cache when this fork stopped merging from it. Nothing refreshes them: an item that is newer than the
-list is left out of inventories and gear, and a new area is missing from the map, until those files are
-generated again.
+The world map follows each game update on its own: osrs-icons draws it from the new cache and publishes
+it (see [Icons](#icons)). Nothing in this repository needs to change for a new area to show.
 
-Two things are made from those map files, and committed beside them, so the map can be zoomed out to the
-whole overworld: the terrain shrunk into three coarser levels (`site/public/map/zoom/`, a few dozen images
-where the map tiles would be thousands) and the list of labels that name a region or a sea
-(`map_major_labels.json`), the only names shown that far out. When the map tiles or the labels change,
-make them again:
-
-```bash
-cd site && npm install --no-save sharp && node scripts/generate-map-levels.js
-```
-
-It makes the levels for all four floors; `--planes 0,1` makes them again for some. A floor without
-levels is drawn from its map tiles at any zoom.
+The item list (`site/public/data/item_data.json`) and the links between places (`map_links.json` beside
+it) are what group-ironmen had generated from the game cache when this fork stopped merging from it.
+Nothing refreshes them: an item that is newer than the list is left out of inventories and gear, and a
+new staircase can't be clicked through, until those files are generated again.
 
 ## Project structure
 
