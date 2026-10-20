@@ -486,8 +486,20 @@ describe("CanvasMap.drawMapAreaLabels", () => {
     map.ctx = createMockCtx();
     map.view = { left: 0, right: 1, top: 1, bottom: 0 };
     map.mapLabels = { 0: { 1: { 0: [10, 20, 5] } } };
+    map.labelUrl = (id) => `https://icons.test/map/labels/${id}.webp`;
     map.drawMapAreaLabels(true);
     expect(map.mapLabelImages.size).toBe(1);
+    expect([...map.mapLabelImages.values()][0].src).toBe("https://icons.test/map/labels/5.webp");
+  });
+
+  it("skips a label the map's data has no image for", () => {
+    const map = createMapInstance();
+    map.ctx = createMockCtx();
+    map.view = { left: 0, right: 1, top: 1, bottom: 0 };
+    map.mapLabels = { 0: { 1: { 0: [10, 20, 5] } } };
+    map.labelUrl = () => null;
+    map.drawMapAreaLabels(true);
+    expect(map.mapLabelImages.size).toBe(0);
   });
 
   it("skips creating label images when loadNewImages is false", () => {
@@ -749,7 +761,7 @@ describe("CanvasMap.buildMapLinkTooltip", () => {
 
   it("builds an img tag with the correct map square URL", () => {
     const html = map.buildMapLinkTooltip({ x: 100, y: 200, plane: 0 });
-    expect(html).toContain('src="/map/0_1_3.webp"');
+    expect(html).toContain('src="https://icons.scapekeeper.com/map/tiles/0_1_3.webp"');
     expect(html).toContain('class="map-link-tooltip__image"');
   });
 

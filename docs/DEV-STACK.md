@@ -124,8 +124,9 @@ the real one.
   OAuth the backend makes. `MOCK_DISCORD_AUTO=100000000000000001` logs in as that one without
   asking.
 
-Not from the mock hub: the map tiles and labels (in `site/public`), the icons (the icon CDN, see the
-README) and the Grand Exchange prices (the backend fetches them from prices.runescape.wiki).
+Not from the mock hub: the map's tiles, names and map icons and the item icons (the icon CDN, see the
+README; `MAP_BASE_URL` points the map at a local osrs-icons build) and the Grand Exchange prices (the
+backend fetches them from prices.runescape.wiki).
 
 ## While it runs
 
@@ -190,8 +191,6 @@ taskkill //F //PID <pid>
 
 ## Traps
 
-- `site/build.js` rewrites the tracked `site/public/data/map.json`. Run
-  `git checkout -- site/public/data/map.json` before committing, and don't `git add -A`.
 - The server's integration tests drop the schema of the database they are pointed at, and without
   `TEST_DATABASE_URL` that is the one from `.env`. Give them a database of their own in the dev
   container: `docker exec map-dev-pg createdb -U postgres guildmap_test`, then

@@ -142,7 +142,7 @@ describe("site server", () => {
     },
   );
 
-  it.each(["/icons/items/4151.webp", "/ui/skill.webp", "/map/0_50_50.png"])(
+  it.each(["/icons/items/4151.webp", "/ui/skill.webp", "/map/0_50_50.webp", "/map/0_50_50.png"])(
     "answers 404, not the page, for a file that isn't there: %s",
     async (urlPath) => {
       const res = await request(sitePort, urlPath);

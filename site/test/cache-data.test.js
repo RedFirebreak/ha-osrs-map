@@ -16,13 +16,11 @@ function expectNumericKeys(obj) {
   }
 }
 
-let itemData, mapData, mapIcons, mapLabels;
+let itemData, mapLinks;
 
 beforeAll(() => {
   itemData = loadJson("item_data.json");
-  mapData = loadJson("map.json");
-  mapIcons = loadJson("map_icons.json");
-  mapLabels = loadJson("map_labels.json");
+  mapLinks = loadJson("map_links.json");
 });
 
 describe("cache data validation", () => {
@@ -74,52 +72,12 @@ describe("cache data validation", () => {
     });
   });
 
-  describe("map.json", () => {
-    it("is valid JSON", () => {
-      expect(typeof mapData).toBe("object");
-      expect(mapData).not.toBeNull();
-    });
-
-    it("has tiles key with non-empty array", () => {
-      expect(Array.isArray(mapData.tiles)).toBe(true);
-      expect(mapData.tiles.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe("map_icons.json", () => {
-    it("is valid JSON", () => {
-      expect(typeof mapIcons).toBe("object");
-      expect(mapIcons).not.toBeNull();
-    });
-
-    it("has nested structure with entries", () => {
-      const regionKeys = Object.keys(mapIcons);
-      expect(regionKeys.length).toBeGreaterThan(0);
-      for (const region of regionKeys) {
-        const planes = mapIcons[region];
-        expect(typeof planes).toBe("object");
-        expect(planes).not.toBeNull();
-        const planeKeys = Object.keys(planes);
-        expect(planeKeys.length).toBeGreaterThan(0);
-      }
-    });
-  });
-
-  describe("map_labels.json", () => {
-    it("is valid JSON", () => {
-      expect(typeof mapLabels).toBe("object");
-      expect(mapLabels).not.toBeNull();
-    });
-
-    it("has nested structure with entries", () => {
-      const regionKeys = Object.keys(mapLabels);
-      expect(regionKeys.length).toBeGreaterThan(0);
-      for (const region of regionKeys) {
-        const planes = mapLabels[region];
-        expect(typeof planes).toBe("object");
-        expect(planes).not.toBeNull();
-        const planeKeys = Object.keys(planes);
-        expect(planeKeys.length).toBeGreaterThan(0);
+  describe("map_links.json", () => {
+    it("maps an x,y,plane key to a destination", () => {
+      expect(Object.keys(mapLinks).length).toBeGreaterThan(0);
+      for (const [key, destination] of Object.entries(mapLinks)) {
+        expect(key).toMatch(/^\d+,\d+,\d$/);
+        expect(destination).toHaveLength(3);
       }
     });
   });

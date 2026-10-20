@@ -9,6 +9,7 @@ import { guildData } from "../data/guild-data";
 import { escapeHtml } from "../data/format";
 import { clusterPoints } from "./event-markers";
 import { EventLayer } from "./event-layer";
+import { cantor, loadMapData, terrainTileUrl } from "./map-data";
 import { MAX_LEVEL, ancestorSource, levelForZoom, levelTileRect, levelTilesInView, minZoomToFit } from "./map-levels";
 import { GAME_TILES_PER_MAP_TILE, MAP_TILE_SIZE, PIXELS_PER_GAME_TILE, tileOrigin } from "./map-space";
 import { TrailLayer } from "./trail-layer";
@@ -138,34 +139,25 @@ export class CanvasMap extends BaseElement {
   async getMapJson() {
     let data;
     try {
-      const response = await fetch("/data/map.json");
-      if (!response.ok) {
-        throw new Error(`failed to fetch map.json (${response.status})`);
-      }
-      data = await response.json();
+      data = await loadMapData();
     } catch (ex) {
       console.error("failed to load map data", ex);
       return;
     }
 
-    this.validTiles = [];
-    for (const x of data.tiles) {
-      this.validTiles.push(new Set(x));
-    }
+    this.validTiles = data.tiles;
     // The coarser tiles there are, per level and floor; see map-levels.js.
-    this.validLevelTiles = {};
-    for (const [level, floors] of Object.entries(data.levels || {})) {
-      this.validLevelTiles[level] = floors.map((tiles) => new Set(tiles));
-    }
+    this.validLevelTiles = data.levels;
 
     this.locations = this.parseIntKeys(data.icons);
     this.buildIconIndex();
     this.mapLabels = this.parseIntKeys(data.labels);
+    this.labelUrl = data.labelUrl;
     // The names of the regions and the seas, each with its rank: the first is kept when two meet.
-    this.majorLabels = new Map((data.majorLabels || []).map((id, rank) => [id, rank]));
+    this.majorLabels = new Map(data.majorLabels.map((id, rank) => [id, rank]));
 
     this.locationIconsSheet = new Image();
-    this.locationIconsSheet.src = "/map/icons/map_icons.webp";
+    if (data.iconSheetUrl) this.locationIconsSheet.src = data.iconSheetUrl;
     this.locationIconsSheet.onload = () => {
       this.requestUpdate();
     };
@@ -536,7 +528,7 @@ export class CanvasMap extends BaseElement {
   buildMapLinkTooltip(destination) {
     const mapSquareX = Math.floor(destination.x / GAME_TILES_PER_MAP_TILE);
     const mapSquareY = Math.floor(destination.y / GAME_TILES_PER_MAP_TILE);
-    const url = `/map/${destination.plane}_${mapSquareX}_${mapSquareY}.webp`;
+    const url = terrainTileUrl(0, `${destination.plane}_${mapSquareX}_${mapSquareY}`);
     const alt = `Destination: (${destination.x}, ${destination.y}) plane ${destination.plane + 1}`;
     const localX = destination.x - mapSquareX * GAME_TILES_PER_MAP_TILE;
     const localY = destination.y - mapSquareY * GAME_TILES_PER_MAP_TILE;
@@ -549,7 +541,7 @@ export class CanvasMap extends BaseElement {
   }
 
   cantor(x, y) {
-    return ((x + y) * (x + y + 1)) / 2 + y;
+    return cantor(x, y);
   }
 
   _update(timestamp) {
@@ -1185,8 +1177,10 @@ export class CanvasMap extends BaseElement {
             let mapLabelImage = this.mapLabelImages.get(key);
             if (!mapLabelImage) {
               if (!loadNewImages) continue;
+              const src = this.labelUrl?.(labelId);
+              if (!src) continue;
               mapLabelImage = new Image();
-              mapLabelImage.src = `/map/labels/${labelId}.webp`;
+              mapLabelImage.src = src;
               this.mapLabelImages.set(key, mapLabelImage);
             }
 
@@ -1256,7 +1250,7 @@ export class CanvasMap extends BaseElement {
     let tile = tiles.get(key);
     if (!tile && load) {
       tile = new Image(MAP_TILE_SIZE, MAP_TILE_SIZE);
-      tile.src = level === 0 ? `/map/${name}.webp` : `/map/zoom/${level}/${name}.webp`;
+      tile.src = terrainTileUrl(level, name);
       tiles.set(key, tile);
     }
     return tile;
