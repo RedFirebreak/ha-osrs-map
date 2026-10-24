@@ -136,6 +136,11 @@ pub(crate) struct HubAccount {
     pub last_seen: Option<DateTime<Utc>>,
     #[serde(default)]
     pub spellbook: Option<String>,
+    /// The prayers that are on, as RuneLite `Prayer` names in prayer book
+    /// order (hub D-119): `[]` when none is on or the player is offline,
+    /// absent from hubs before it and without the `activity` category.
+    #[serde(default)]
+    pub active_prayers: Option<Vec<String>>,
     #[serde(default)]
     pub hp: Option<Meter>,
     #[serde(default)]

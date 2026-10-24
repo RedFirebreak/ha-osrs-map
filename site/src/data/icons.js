@@ -59,3 +59,13 @@ export function slotIconUrl(slot) {
   if (!SLOT_SLUGS.includes(slug)) return "";
   return `${base}/slots/${slug}.png`;
 }
+
+/**
+ * RuneLite Prayer name ("PROTECT_FROM_MELEE", "RP_TRINITAS", …) → its lit prayer-book icon, which
+ * osrs-icons publishes under /prayers/. A 404 (an icon set from before the prayers) shows the name.
+ */
+export function prayerIconUrl(prayer) {
+  const base = iconsBase();
+  if (!base || !prayer || !/^[A-Z0-9_]+$/.test(prayer)) return "";
+  return `${base}/prayers/${prayer.toLowerCase()}.png`;
+}
