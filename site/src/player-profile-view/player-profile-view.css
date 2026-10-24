@@ -276,7 +276,7 @@ player-profile-view .player-stats__name {
 }
 
 .player-profile-view__sessions,
-.player-profile-view__gear-changes {
+.player-profile-view__gear-trips {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -315,24 +315,41 @@ player-profile-view .player-stats__name {
   stroke-linejoin: round;
 }
 
-.player-profile-view__gear-changes li {
-  padding: 4px 0;
+.player-profile-view__gear-trips li {
+  padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.player-profile-view__gear-changes time {
+.player-profile-view__gear-trip-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
   color: #aaa;
   font-size: 0.85rem;
 }
 
-.player-profile-view__gear-items {
+/* The gear brought: a group per slot; a group with more than one item is where the player swapped. */
+.player-profile-view__gear-kit {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px;
-  margin-top: 2px;
+  gap: 4px;
+  margin-top: 4px;
 }
 
-.player-profile-view__gear-items img {
+.player-profile-view__gear-slot {
+  display: inline-flex;
+  padding: 1px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.player-profile-view__gear-slot.swapped {
+  border-color: rgba(255, 152, 31, 0.55);
+  background: rgba(255, 152, 31, 0.08);
+}
+
+.player-profile-view__gear-slot img {
   width: 32px;
   height: 32px;
   object-fit: contain;

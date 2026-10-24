@@ -36,7 +36,8 @@ of Group Ironman teams:
   24)") and HP.
 - **Player profile**: vitals, total level and XP, carried value, gear and inventory, skills; XP gained
   today, this week, month or year; play time and sessions with their worlds; carried value over 30 days;
-  gear changes; recent events. The map follows the player while it's open.
+  gear by trip (a trip's swaps folded into one entry with the gear brought); recent events. The map
+  follows the player while it's open.
 - **Trails** of up to eight players at once, each in the player's colour (24 hours or 7 days). A trail
   follows the tiles the player walked; of a busy player it shows the newest part and says since when. It
   ends on the player's marker and grows as they move, fading with age. Below the two lengths the menu
