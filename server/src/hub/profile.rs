@@ -43,8 +43,9 @@ const RANGE_EVENTS_MAX: usize = 2000;
 const LOOT_TYPES: &str = "loot,pk_loot";
 const OTHER_TYPES: &str =
     "death,level_up,collection_log,superior_spawn,achievement_diary,combat_task";
-/// Worn-gear changes returned at most; the site shows the most recent ones.
-const MAX_GEAR_CHANGES: usize = 50;
+/// Worn-gear changes returned at most (the hub's own cap): the site groups them
+/// into trips (hub D-121), which needs every change of a trip, not the last few.
+const MAX_GEAR_CHANGES: usize = 500;
 
 #[derive(Deserialize)]
 pub(crate) struct PeriodQuery {

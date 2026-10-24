@@ -11,6 +11,7 @@ import { formatDuration, formatGp, formatWorlds, relativeTime } from "../data/fo
 import { activityLabel, hiscoresView } from "../data/hiscores";
 import { ACCOUNT_TYPE_BADGES } from "../player-roster/player-roster";
 import { activePrayers, prayerElement } from "../data/prayers";
+import { gearTrips } from "../data/gear-trips";
 
 const PROFILE_TABS = [
   ["overview", "Overview"],
@@ -61,6 +62,25 @@ export function sparklinePoints(values, width, height, padding = 2) {
 }
 
 /** One player's profile: header, actions and tabs. */
+// Trips listed in the Gear tab.
+const GEAR_TRIPS_SHOWN = 10;
+
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** "24 Oct 13:56 – 14:43" in the browser's time zone. */
+function tripTimes(trip) {
+  const start = new Date(trip.startedAt);
+  const end = new Date(trip.endedAt);
+  const day = { day: "numeric", month: "short" };
+  const time = { hour: "2-digit", minute: "2-digit" };
+  const from = `${start.toLocaleDateString(undefined, day)} ${start.toLocaleTimeString(undefined, time)}`;
+  if (trip.endedAt === trip.startedAt) return from;
+  const sameDay = start.toDateString() === end.toDateString();
+  return `${from} – ${sameDay ? "" : `${end.toLocaleDateString(undefined, day)} `}${end.toLocaleTimeString(undefined, time)}`;
+}
+
 export class PlayerProfileView extends BaseElement {
   constructor() {
     super();
@@ -431,7 +451,7 @@ export class PlayerProfileView extends BaseElement {
   }
 
   renderGear() {
-    const section = this.section("Gear changes, last 30 days");
+    const section = this.section("Gear by trip, last 30 days");
     if (!shares(this.member, "equipment")) {
       this.notShared(section, "their equipment");
       return;
@@ -439,29 +459,41 @@ export class PlayerProfileView extends BaseElement {
     this.load(section, async () => {
       const data = await api.getPlayerGearHistory(this.playerName, 30);
       if (!this.isConnected) return;
-      const changes = data.changes || [];
-      if (!changes.length) {
+      const trips = gearTrips(data.changes || []).slice(0, GEAR_TRIPS_SHOWN);
+      if (!trips.length) {
         section.appendChild(el("p", "player-profile-view__note", "No changes recorded."));
         return;
       }
-      const list = el("ul", "player-profile-view__gear-changes");
-      for (const change of changes) {
+      const list = el("ul", "player-profile-view__gear-trips");
+      for (const trip of trips) {
         const row = el("li");
-        const time = el("time", "", relativeTime(change.changed_at));
-        time.title = new Date(change.changed_at).toLocaleString();
-        const items = el("div", "player-profile-view__gear-items");
-        const equipment = change.equipment || [];
-        for (let i = 0; i < equipment.length; i += 2) {
-          const id = equipment[i];
-          if (!id) continue;
-          const img = el("img");
-          img.loading = "lazy";
-          img.alt = Item.itemDetails?.[id]?.name || "";
-          img.title = img.alt;
-          img.src = Item.imageUrl(id, equipment[i + 1]);
-          items.appendChild(img);
+        const head = el("div", "player-profile-view__gear-trip-head");
+        const time = el("time", "", relativeTime(trip.endedAt));
+        time.dateTime = trip.startedAt;
+        time.title = tripTimes(trip);
+        const swaps = el(
+          "span",
+          "",
+          trip.swaps === 0 ? "no swaps" : `${plural(trip.swaps, "swap")} · ${plural(trip.setups, "setup")}`,
+        );
+        head.append(time, swaps);
+        const kit = el("div", "player-profile-view__gear-kit");
+        for (const { items } of trip.kit) {
+          const group = el(
+            "span",
+            items.length > 1 ? "player-profile-view__gear-slot swapped" : "player-profile-view__gear-slot",
+          );
+          for (const { id, quantity } of items) {
+            const img = el("img");
+            img.loading = "lazy";
+            img.alt = Item.itemDetails?.[id]?.name || "";
+            img.title = img.alt;
+            img.src = Item.imageUrl(id, quantity);
+            group.appendChild(img);
+          }
+          kit.appendChild(group);
         }
-        row.append(time, items);
+        row.append(head, kit);
         list.appendChild(row);
       }
       section.appendChild(list);

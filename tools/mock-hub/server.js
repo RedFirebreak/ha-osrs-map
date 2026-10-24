@@ -857,10 +857,18 @@ const server = http.createServer((req, res) => {
     if (sub === "/equipment-history") {
       if (!shares(account, "equipment")) return notFound(res);
       const current = equipmentItems(account);
+      const dagger = current.map((item) =>
+        item.equipment_slot === "WEAPON" ? { ...item, id: 1215, name: "Dragon dagger", ge_price: 17_000 } : item,
+      );
       return ok(res, {
         ...base,
         changes: [
           { changed_at: new Date(Date.now() - 3600_000).toISOString(), items: current },
+          // A trip with special-attack swaps (whip, dragon dagger, whip): one trip on the map's
+          // Gear tab (hub D-121), not three entries.
+          { changed_at: new Date(Date.now() - 3 * 3600_000).toISOString(), items: current },
+          { changed_at: new Date(Date.now() - 3 * 3600_000 - 60_000).toISOString(), items: dagger },
+          { changed_at: new Date(Date.now() - 3 * 3600_000 - 120_000).toISOString(), items: current },
           { changed_at: new Date(Date.now() - 2 * 86400_000).toISOString(), items: current.slice(0, 1) },
         ],
       });
