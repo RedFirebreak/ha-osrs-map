@@ -3,6 +3,7 @@ import { guildData } from "../data/guild-data";
 import { reorder } from "../dom";
 import { filterMembers, sortLabel, sortMembers, totalLevel, world } from "../data/roster-model";
 import { relativeTime } from "../data/format";
+import { activePrayers, prayerElement } from "../data/prayers";
 import { selection, MAX_TRAILS } from "../data/selection";
 import { remember, remembered } from "../data/storage";
 
@@ -165,6 +166,7 @@ export class PlayerRoster extends BaseElement {
         <div class="player-roster__line">
           <span class="player-roster__name"></span>
           <span class="player-roster__badge"></span>
+          <span class="player-roster__prayers"></span>
           <span class="player-roster__world"></span>
         </div>
         <div class="player-roster__line player-roster__line--sub">
@@ -182,6 +184,8 @@ export class PlayerRoster extends BaseElement {
     row.worldEl = row.querySelector(".player-roster__world");
     row.levelEl = row.querySelector(".player-roster__level");
     row.badgeEl = row.querySelector(".player-roster__badge");
+    row.prayersEl = row.querySelector(".player-roster__prayers");
+    row.prayers = "";
     row.hitpointsBar = row.querySelector(".player-roster__bar--hitpoints");
     row.prayerBar = row.querySelector(".player-roster__bar--prayer");
     row.trailButton = row.querySelector(".player-roster__trail");
@@ -210,8 +214,17 @@ export class PlayerRoster extends BaseElement {
     row.badgeEl.title = badge?.title || "";
     row.badgeEl.dataset.type = member.meta?.type ?? "";
 
+    this.updatePrayers(row, activePrayers(member) ?? []);
     this.updateBar(row.hitpointsBar, "Hitpoints", member.online && member.stats?.hitpoints);
     this.updateBar(row.prayerBar, "Prayer", member.online && member.stats?.prayer);
+  }
+
+  /** The icons of the prayers that are on, redrawn only when they change. */
+  updatePrayers(row, prayers) {
+    const key = prayers.join();
+    if (key === row.prayers) return;
+    row.prayers = key;
+    row.prayersEl.replaceChildren(...prayers.map((name) => prayerElement(name)));
   }
 
   /** `stat` is `{ current, max }`; anything else empties the bar. */

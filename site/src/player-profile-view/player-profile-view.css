@@ -147,6 +147,48 @@ player-profile-view .player-stats__name {
   visibility: hidden;
 }
 
+.player-profile-view__prayers {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.player-profile-view__prayers:empty {
+  display: none;
+}
+
+.player-profile-view__prayers-title {
+  color: #aaa;
+  line-height: 24px;
+}
+
+.player-profile-view__prayer-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  flex: 1;
+}
+
+.player-profile-view__prayer-list .prayer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 24px;
+}
+
+.player-profile-view__prayer-list .prayer__icon {
+  width: 24px;
+  height: 24px;
+  object-fit: scale-down;
+}
+
+.player-profile-view__prayers-none {
+  color: #aaa;
+  line-height: 24px;
+}
+
 .player-profile-view__facts {
   display: grid;
   grid-template-columns: auto 1fr;

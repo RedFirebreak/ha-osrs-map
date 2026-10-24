@@ -340,6 +340,16 @@ function hiscores(account) {
 
 const value = (items) => items.reduce((sum, item) => sum + item.ge_price * item.quantity, 0);
 
+// RuneLite Prayer names, prayer book order, as the hub passes them on from the plugin.
+const PRAYER_SETS = [
+  ["PROTECT_FROM_MELEE", "PIETY"],
+  ["PROTECT_FROM_MAGIC", "AUGURY"],
+  [],
+  ["PROTECT_FROM_MISSILES", "RIGOUR"],
+  ["PROTECT_ITEM", "RP_TRINITAS"],
+  ["RAPID_HEAL"],
+];
+
 function snapshotAccount(account) {
   const { x, y, plane, boat, world, online } = position(account);
   const seen = lastSeen(account, online);
@@ -363,6 +373,8 @@ function snapshotAccount(account) {
     hp: { current: 60 + (account.phase % 39), max: 99 },
     prayer: { current: 20 + (account.phase % 50), max: 70 },
     spellbook: ["standard", "ancient", "lunar", "arceuus"][account.phase % 4],
+    // The prayers that are on (hub D-119): none while offline, as the hub says.
+    active_prayers: online ? PRAYER_SETS[account.phase % PRAYER_SETS.length] : [],
     location: { x, y, plane, is_on_boat: boat, stale: !online, updated_at: seen.toISOString() },
     skills: {
       total_level: skills.reduce((sum, s) => sum + s.level, 0),

@@ -10,6 +10,7 @@ import { hubErrorMessage } from "../data/hub-format";
 import { formatDuration, formatGp, formatWorlds, relativeTime } from "../data/format";
 import { activityLabel, hiscoresView } from "../data/hiscores";
 import { ACCOUNT_TYPE_BADGES } from "../player-roster/player-roster";
+import { activePrayers, prayerElement } from "../data/prayers";
 
 const PROFILE_TABS = [
   ["overview", "Overview"],
@@ -109,6 +110,9 @@ export class PlayerProfileView extends BaseElement {
     for (const topic of ["presence", "stats", "meta", "region"]) {
       this.subscribe(`${topic}:${this.playerName}`, () => this.updateHeader());
     }
+    for (const topic of ["presence", "meta"]) {
+      this.subscribe(`${topic}:${this.playerName}`, () => this.updatePrayers());
+    }
     // A tab shows what the player shares: draw it again when that changes.
     this.shared = this.sharedNow();
     this.subscribe(`meta:${this.playerName}`, () => {
@@ -168,6 +172,23 @@ export class PlayerProfileView extends BaseElement {
     this.followButton.disabled = !member.online || !member.coordinates;
   }
 
+  /** The overview's row of prayers that are on (hub D-119); nothing when the hub doesn't say. */
+  updatePrayers() {
+    if (!this.prayersEl?.isConnected) return;
+    const prayers = activePrayers(this.member);
+    const key = prayers === null ? null : prayers.join();
+    if (key === this.prayersShown) return;
+    this.prayersShown = key;
+    if (prayers === null) {
+      this.prayersEl.replaceChildren();
+      return;
+    }
+    const list = el("div", "player-profile-view__prayer-list");
+    if (prayers.length === 0) list.append(el("span", "player-profile-view__prayers-none", "None"));
+    for (const name of prayers) list.append(prayerElement(name, { withLabel: true }));
+    this.prayersEl.replaceChildren(el("span", "player-profile-view__prayers-title", "Prayers"), list);
+  }
+
   showTab(tab) {
     if (!PROFILE_TABS.some(([key]) => key === tab)) tab = "overview";
     lastTab = tab;
@@ -220,6 +241,10 @@ export class PlayerProfileView extends BaseElement {
       const stats = document.createElement("player-stats");
       stats.setAttribute("player-name", this.playerName);
       vitals.appendChild(stats);
+      this.prayersEl = el("div", "player-profile-view__prayers");
+      vitals.appendChild(this.prayersEl);
+      this.prayersShown = null;
+      this.updatePrayers();
     }
 
     const facts = el("dl", "player-profile-view__facts");

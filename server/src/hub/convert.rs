@@ -31,6 +31,11 @@ pub(crate) struct HubMeta {
     pub equipment_value: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spellbook: Option<String>,
+    /// The prayers that are on (RuneLite `Prayer` names, prayer book order),
+    /// as the hub says (D-119): `[]` when none is, left out when the hub
+    /// doesn't send them (an older hub, or `activity` not shared).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_prayers: Option<Vec<String>>,
     /// The last game state the plugin sent; `online` is the one to trust.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_state: Option<String>,
@@ -83,6 +88,7 @@ impl HubMeta {
                 |meta| meta.equipment_value,
             ),
             spellbook: account.spellbook.clone(),
+            active_prayers: account.active_prayers.clone(),
             game_state: account.game_state.clone(),
             is_on_boat: account
                 .location
@@ -329,6 +335,7 @@ mod tests {
             "game_state": "LOGGED_IN",
             "last_seen": "2026-09-29T14:13:42.046Z",
             "spellbook": "lunar",
+            "active_prayers": ["PROTECT_FROM_MELEE", "PIETY"],
             "hp": {"current": 90, "max": 99},
             "prayer": {"current": 50, "max": 99},
             "location": {"x": 3164, "y": 3487, "plane": 0, "is_on_boat": false, "stale": false,
@@ -382,10 +389,44 @@ mod tests {
         assert_eq!(meta.inventory_value, Some(5000100));
         assert_eq!(meta.equipment_value, Some(2500000));
         assert_eq!(meta.spellbook.as_deref(), Some("lunar"));
+        assert_eq!(
+            meta.active_prayers,
+            Some(vec!["PROTECT_FROM_MELEE".to_string(), "PIETY".to_string()])
+        );
         assert_eq!(meta.game_state.as_deref(), Some("LOGGED_IN"));
         let json = serde_json::to_value(&meta).unwrap();
         assert_eq!(json["type"], 0);
         assert_eq!(json["categories"][0], "stats");
+        assert_eq!(json["active_prayers"][1], "PIETY");
+    }
+
+    #[test]
+    fn active_prayers_follow_the_hub() {
+        let mut account = full_account();
+        account.active_prayers = Some(Vec::new());
+        let meta = MemberSections::from_account(&account, None).meta.unwrap();
+        assert_eq!(meta.active_prayers, Some(Vec::new()));
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(json["active_prayers"], serde_json::json!([]));
+
+        // A hub from before D-119, or a key without `activity`: nothing to show.
+        let hidden = without_category(
+            "activity",
+            &[
+                "online",
+                "world",
+                "special_world",
+                "hp",
+                "prayer",
+                "active_prayers",
+            ],
+        );
+        let meta = MemberSections::from_account(&hidden, None).meta.unwrap();
+        assert_eq!(meta.active_prayers, None);
+        assert!(serde_json::to_value(&meta)
+            .unwrap()
+            .get("active_prayers")
+            .is_none());
     }
 
     #[test]
@@ -487,7 +528,14 @@ mod tests {
         );
         let hidden = without_category(
             "activity",
-            &["online", "world", "special_world", "hp", "prayer"],
+            &[
+                "online",
+                "world",
+                "special_world",
+                "hp",
+                "prayer",
+                "active_prayers",
+            ],
         );
         assert_eq!(
             MemberSections::from_account(&hidden, Some(&before)).stats,
