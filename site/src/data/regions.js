@@ -1,7 +1,8 @@
 // Names for the places players are, from the game's 64x64 map regions. The
-// names come from `/data/regions.json` (see scripts/generate-regions.js); a
-// region without a name borrows one from a neighbouring region, and a few
-// areas are recognised from their coordinates.
+// names are the hub's (its /api/v1/regions.json, which the backend passes on as
+// /api/regions), so the map and the hub name a place the same way; a region
+// without a name borrows one from a neighbouring region, and a few areas are
+// recognised from their coordinates.
 
 let names = new Map();
 
@@ -29,7 +30,7 @@ export function setRegionNames(entries) {
 
 export async function loadRegions() {
   try {
-    const response = await fetch("/data/regions.json");
+    const response = await fetch("/api/regions");
     if (!response.ok) return;
     const data = await response.json();
     setRegionNames(data.regions || {});

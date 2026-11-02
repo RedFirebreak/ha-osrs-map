@@ -193,6 +193,39 @@ impl HubClient {
         }
     }
 
+    /// GETs one of the hub's public documents (no envelope, no key, outside the hub's rate limit
+    /// and so outside the budget): `/regions.json`.
+    pub(crate) async fn get_public(self: &Arc<Self>, path: &str) -> HubResult<serde_json::Value> {
+        let url = format!("{}{}", self.base_url, path);
+        let client = Arc::clone(self);
+        tokio::task::spawn_blocking(move || client.get_public_blocking(&url))
+            .await
+            .map_err(|err| HubError::Other(format!("hub request task failed: {}", err)))?
+    }
+
+    fn get_public_blocking(&self, url: &str) -> HubResult<serde_json::Value> {
+        let mut response = self
+            .agent
+            .get(url)
+            .header("Accept", "application/json")
+            .call()
+            .map_err(|err| HubError::Other(format!("hub request failed: {}", err)))?;
+        match response.status().as_u16() {
+            200 => {
+                let body = response
+                    .body_mut()
+                    .with_config()
+                    .limit(RESPONSE_BODY_LIMIT)
+                    .read_to_string()
+                    .map_err(|err| HubError::Other(format!("reading hub response: {}", err)))?;
+                serde_json::from_str(&body)
+                    .map_err(|err| HubError::Other(format!("unexpected hub response: {}", err)))
+            }
+            404 => Err(HubError::NotFound),
+            status => Err(HubError::Other(format!("hub returned {}", status))),
+        }
+    }
+
     fn get_blocking<T: DeserializeOwned>(
         &self,
         url: &str,

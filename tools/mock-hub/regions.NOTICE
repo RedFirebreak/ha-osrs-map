@@ -1,4 +1,4 @@
-public/data/regions.json lists place names by map region id. They come from
+regions.json lists place names by map region id. They come from
 RuneLite's DiscordGameEventType.java (https://github.com/runelite/runelite),
 used under this licence:
 

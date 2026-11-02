@@ -47,6 +47,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             // For anyone.
             .service(health::health)
             .service(unauthed::get_ge_prices)
+            .service(hub::routes::get_regions)
             .configure(auth_routes::configure)
             .service(admin)
             .service(signed_in),
