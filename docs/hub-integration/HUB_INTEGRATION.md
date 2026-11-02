@@ -23,6 +23,7 @@ for local development.
 | `GET /accounts/{id}/hiscores` | Profile → Hiscores: skills, boss kill counts, clue scrolls and other activities, with the rank on the account's own ironman table for an iron. See "Hiscores" below | 5 min |
 | `GET /hiscores` | Clan page → Guild hiscores: everyone whose hiscores the key may read, in one request | 5 min |
 | `GET /events?accounts=` | Profile → Activity (a player's recent events) | 30 s |
+| `GET /regions.json` | The place names of the map's regions (the roster, the Clan page's places, a trail's and an event's place), passed on to the site as `/api/regions`. Public, without the key, outside the rate limit. A hub from before D-138 answers 404: places are then only named where the coordinates say it (the Wilderness and its level, the Ferox Enclave, instances) | 24 h |
 | `GET /events?accounts=&from=&to=` | The events marked on a trail, over its length (`to` only for a session that is over): pages of 500, newest first, until `next_cursor` is null or 2000 events. When the map leaves out small drops, drops (`types=loot,pk_loot&min_value=`, from the smallest drop the map shows) are read apart from the other kinds, so a trail costs 2 to 8 requests; with every drop shown it is one read of all kinds, 1 to 4 requests. The site asks once per trail and again every 10 min. A hub from before D-98 ignores `from` and hands back a feed cursor; the backend then keeps that one page | 2 min |
 
 A death's and a superior spawn's own location is where the map puts the event, unless it lies
@@ -215,5 +216,6 @@ out stays where they were last seen.
 | `via` on every trail point: how the player got there | D-103 | osrs-data-hub PR #49 |
 | `instance` as a `via`: a walk into the next room of a raid | D-103 | osrs-data-hub PR #53 |
 | The official hiscores: `GET /accounts/{id}/hiscores`, `GET /hiscores`, the `hiscores` category | – | osrs-data-hub, hiscores sync (merges before this map's hiscores change) |
+| Place names: `GET /regions.json`, and `region` on every location (the map's table, moved to the hub) | D-138 | osrs-data-hub, the MCP day summary (M8) |
 
 Push to keys (webhooks or a key-authenticated stream) was deferred (D-93); polling stays the contract.

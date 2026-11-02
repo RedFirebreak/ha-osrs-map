@@ -54,3 +54,35 @@ pub async fn test_hub_connection(
     };
     Ok(HttpResponse::Ok().json(response))
 }
+
+/// How long the hub's place names are kept: they change only with a hub release.
+const REGIONS_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// The place names of the game's map regions, as the hub names them (its public
+/// `/regions.json`, hub D-138), so the map and the hub name a place the same way from
+/// one table. Public like the hub's own: the names are RuneLite's, not guild data,
+/// and the login page loads them too. A hub without the table answers 404, and the
+/// site falls back to the places it works out from the coordinates.
+#[get("/regions")]
+pub async fn get_regions(context: web::Data<HubContext>) -> Result<HttpResponse, Error> {
+    let client = std::sync::Arc::clone(&context.client);
+    let found = context
+        .cache
+        .get_or_fetch("regions", REGIONS_TTL, || async move {
+            client.get_public("/regions.json").await
+        })
+        .await;
+    Ok(match found {
+        Ok(value) => HttpResponse::Ok()
+            .insert_header(("Cache-Control", "public, max-age=3600"))
+            .json(value.as_ref()),
+        Err(HubError::NotFound) => HttpResponse::NotFound().json(serde_json::json!({
+            "message": "The hub has no place names (it is older than osrs-data-hub's regions.json)."
+        })),
+        Err(err) => {
+            log::warn!("place names from the hub: {}", err);
+            HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({ "message": "The hub's place names are unavailable." }))
+        }
+    })
+}

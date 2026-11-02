@@ -309,5 +309,7 @@ docs/              Deployment contract (DEPLOYMENT.md), the dev stack (DEV-STACK
   License (see [LICENSE](LICENSE)).
 - RuneLite companion plugin by [xXD4rkDragonXx](https://github.com/xXD4rkDragonXx).
 - Place names by map region from [RuneLite](https://github.com/runelite/runelite)'s Discord plugin,
-  BSD 2-Clause License (see `site/public/data/regions.NOTICE`). Regenerate them with
-  `node site/scripts/generate-regions.js path/to/DiscordGameEventType.java`.
+  BSD 2-Clause License. The map reads them from the hub (`/api/v1/regions.json`, in osrs-data-hub
+  since its day summary), which keeps them. With an older hub, places are only named where the
+  coordinates say it: the Wilderness and its level, the Ferox Enclave, instances. The mock hub has
+  its own copy (`tools/mock-hub/regions.NOTICE`).

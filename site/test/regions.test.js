@@ -124,8 +124,9 @@ describe("regions", () => {
   });
 });
 
+// The hub's table, as the mock hub serves it.
 describe("regions.json", () => {
-  const file = path.join(__dirname, "../public/data/regions.json");
+  const file = path.join(__dirname, "../../tools/mock-hub/regions.json");
 
   it("maps region ids to names", () => {
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -137,7 +138,7 @@ describe("regions.json", () => {
       expect(name.length).toBeGreaterThan(0);
     }
     expect(data.regions[12850]).toBe("Lumbridge");
-    expect(fs.existsSync(path.join(__dirname, "../public/data/regions.NOTICE"))).toBe(true);
+    expect(fs.existsSync(path.join(__dirname, "../../tools/mock-hub/regions.NOTICE"))).toBe(true);
   });
 
   it("names the Slayer Tower basement", () => {

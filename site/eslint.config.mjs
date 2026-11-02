@@ -44,7 +44,7 @@ export default [
     languageOptions: { sourceType: "commonjs", globals: globals.node },
   },
   {
-    files: ["**/*.mjs", "scripts/generate-regions.js"],
+    files: ["**/*.mjs"],
     languageOptions: { sourceType: "module", globals: globals.node },
   },
 ];

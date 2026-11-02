@@ -38,6 +38,8 @@
 // and the same events
 // every lap: a level, a 14.5M drop, a collection log slot. MOCK_HUB_TRAIL_HOURS
 // sets how far back trails go (default 6; 168 is the week a trail can be).
+// /regions.json serves the hub's place names from a copy (regions.json here);
+// MOCK_HUB_REGIONS=off mimics a hub from before it had them (a 404).
 const http = require("http");
 const crypto = require("crypto");
 // How a player got from one point of a trail to the next, as the hub says it.
@@ -51,6 +53,7 @@ const TRAIL_HOURS = Math.max(1, parseInt(process.env.MOCK_HUB_TRAIL_HOURS || "6"
 const EVENTS_RANGE = process.env.MOCK_HUB_EVENTS_RANGE !== "off";
 const MEMBERS_ENDPOINT = process.env.MOCK_HUB_MEMBERS !== "off";
 const MINUTE_TRAIL = process.env.MOCK_HUB_TRAIL === "minute";
+const REGIONS = process.env.MOCK_HUB_REGIONS === "off" ? null : require("./regions.json");
 const TICK_MS = 600;
 const MAX_LOCATION_POINTS = 20_000;
 const DISCORD_AUTO = process.env.MOCK_DISCORD_AUTO || "";
@@ -739,6 +742,12 @@ const server = http.createServer((req, res) => {
   console.log(`${req.method} ${url.pathname}${url.search}`);
 
   if (url.pathname.startsWith("/discord/")) return discord(req, res, url);
+
+  // The hub's place names (hub D-138): public, no key, no envelope.
+  if (url.pathname === "/api/v1/regions.json") {
+    if (!REGIONS) return notFound(res, "There is no such endpoint in API v1.");
+    return send(res, 200, REGIONS, { "Cache-Control": "public, max-age=86400" });
+  }
 
   if (req.headers.authorization !== `Bearer ${API_KEY}`) {
     return send(res, 401, { error: { code: "unauthorized", message: "Missing or invalid key" } });
