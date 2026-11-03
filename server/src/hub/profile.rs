@@ -42,7 +42,7 @@ const RANGE_EVENTS_MAX: usize = 2000;
 /// too, or a trail leaves it out when small drops are hidden.
 const LOOT_TYPES: &str = "loot,pk_loot";
 const OTHER_TYPES: &str =
-    "death,level_up,collection_log,superior_spawn,achievement_diary,combat_task";
+    "death,level_up,collection_log,superior_spawn,achievement_diary,combat_task,slayer_task_complete";
 /// Worn-gear changes returned at most (the hub's own cap): the site groups them
 /// into trips (hub D-121), which needs every change of a trip, not the last few.
 const MAX_GEAR_CHANGES: usize = 500;

@@ -189,6 +189,59 @@ player-profile-view .player-stats__name {
   line-height: 24px;
 }
 
+.player-profile-view__slayer {
+  margin-top: 10px;
+}
+
+.player-profile-view__slayer:empty {
+  display: none;
+}
+
+.player-profile-view__slayer .slayer__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 24px;
+}
+
+.player-profile-view__slayer .slayer__icon {
+  width: 20px;
+  height: 20px;
+  object-fit: scale-down;
+}
+
+.player-profile-view__slayer .slayer__task {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-profile-view__slayer .slayer__location,
+.player-profile-view__slayer .slayer__none,
+.player-profile-view__slayer .slayer__numbers {
+  color: #aaa;
+}
+
+.player-profile-view__slayer .slayer__left {
+  font-variant-numeric: tabular-nums;
+}
+
+.player-profile-view__slayer .slayer__bar {
+  height: 4px;
+  margin: 4px 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.player-profile-view__slayer .slayer__fill {
+  height: 100%;
+  border-radius: 2px;
+  background: #b5372f;
+}
+
 .player-profile-view__facts {
   display: grid;
   grid-template-columns: auto 1fr;

@@ -11,6 +11,7 @@ import { formatDuration, formatGp, formatWorlds, relativeTime } from "../data/fo
 import { activityLabel, hiscoresView } from "../data/hiscores";
 import { ACCOUNT_TYPE_BADGES } from "../player-roster/player-roster";
 import { activePrayers, prayerElement } from "../data/prayers";
+import { slayerElement, slayerState } from "../data/slayer";
 import { gearTrips } from "../data/gear-trips";
 
 const PROFILE_TABS = [
@@ -133,6 +134,7 @@ export class PlayerProfileView extends BaseElement {
     for (const topic of ["presence", "meta"]) {
       this.subscribe(`${topic}:${this.playerName}`, () => this.updatePrayers());
     }
+    this.subscribe(`meta:${this.playerName}`, () => this.updateSlayer());
     // A tab shows what the player shares: draw it again when that changes.
     this.shared = this.sharedNow();
     this.subscribe(`meta:${this.playerName}`, () => {
@@ -209,6 +211,16 @@ export class PlayerProfileView extends BaseElement {
     this.prayersEl.replaceChildren(el("span", "player-profile-view__prayers-title", "Prayers"), list);
   }
 
+  /** The overview's slayer task, points and streak (hub D-141); nothing when the hub doesn't say. */
+  updateSlayer() {
+    if (!this.slayerEl?.isConnected) return;
+    const state = slayerState(this.member);
+    const key = state === null ? null : JSON.stringify(state);
+    if (key === this.slayerShown) return;
+    this.slayerShown = key;
+    this.slayerEl.replaceChildren(...(state === null ? [] : [slayerElement(state)]));
+  }
+
   showTab(tab) {
     if (!PROFILE_TABS.some(([key]) => key === tab)) tab = "overview";
     lastTab = tab;
@@ -265,6 +277,10 @@ export class PlayerProfileView extends BaseElement {
       vitals.appendChild(this.prayersEl);
       this.prayersShown = null;
       this.updatePrayers();
+      this.slayerEl = el("div", "player-profile-view__slayer");
+      vitals.appendChild(this.slayerEl);
+      this.slayerShown = undefined;
+      this.updateSlayer();
     }
 
     const facts = el("dl", "player-profile-view__facts");

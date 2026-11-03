@@ -141,6 +141,11 @@ pub(crate) struct HubAccount {
     /// absent from hubs before it and without the `activity` category.
     #[serde(default)]
     pub active_prayers: Option<Vec<String>>,
+    /// The slayer task, points and streaks as the plugin last sent them (hub
+    /// D-141): `null` until it did, absent from hubs before it and without the
+    /// `activity` category.
+    #[serde(default)]
+    pub slayer: Option<HubSlayer>,
     #[serde(default)]
     pub hp: Option<Meter>,
     #[serde(default)]
@@ -153,6 +158,45 @@ pub(crate) struct HubAccount {
     pub equipment: Option<HubItems>,
     #[serde(default)]
     pub inventory: Option<HubItems>,
+}
+
+/// An account's slayer state on `GET /snapshot` (hub D-141). The map passes
+/// it on as it is, in the member's meta.
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct HubSlayer {
+    /// The current task; `null` between tasks.
+    #[serde(default)]
+    pub task: Option<HubSlayerTask>,
+    #[serde(default)]
+    pub points: Option<i64>,
+    #[serde(default)]
+    pub streaks: HubSlayerStreaks,
+}
+
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct HubSlayerTask {
+    /// As the game names it; `null` when the plugin couldn't look it up.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Konar's tasks only, and only for a key that reads a location category.
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub remaining: i64,
+    #[serde(default)]
+    pub amount: i64,
+}
+
+/// Tasks in a row: the game counts Krystilia's (wilderness) and Mortimer's
+/// tasks apart from the others.
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct HubSlayerStreaks {
+    #[serde(default)]
+    pub normal: Option<i64>,
+    #[serde(default)]
+    pub wilderness: Option<i64>,
+    #[serde(default)]
+    pub mortimer: Option<i64>,
 }
 
 /// `GET /me`.

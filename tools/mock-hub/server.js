@@ -353,6 +353,25 @@ const PRAYER_SETS = [
   ["RAPID_HEAL"],
 ];
 
+// Slayer tasks, as the hub passes them on from the plugin (hub D-141); the second is Konar's.
+const SLAYER_TASKS = [
+  { name: "Abyssal demons", location: null, amount: 160 },
+  { name: "Wyrms", location: "Karuulm Slayer Dungeon", amount: 130 },
+  { name: "Kraken", location: null, amount: 120 },
+  null,
+];
+
+/** The account's slayer state: a task that goes down with the clock, or none between tasks. */
+function slayer(account) {
+  const task = SLAYER_TASKS[account.phase % SLAYER_TASKS.length];
+  const minute = Math.floor(Date.now() / 60000);
+  return {
+    task: task && { ...task, remaining: Math.max(1, task.amount - ((minute + account.phase * 7) % task.amount)) },
+    points: 100 + account.phase * 37,
+    streaks: { normal: 10 + account.phase, wilderness: account.phase % 3, mortimer: 0 },
+  };
+}
+
 function snapshotAccount(account) {
   const { x, y, plane, boat, world, online } = position(account);
   const seen = lastSeen(account, online);
@@ -378,6 +397,7 @@ function snapshotAccount(account) {
     spellbook: ["standard", "ancient", "lunar", "arceuus"][account.phase % 4],
     // The prayers that are on (hub D-119): none while offline, as the hub says.
     active_prayers: online ? PRAYER_SETS[account.phase % PRAYER_SETS.length] : [],
+    slayer: slayer(account),
     location: { x, y, plane, is_on_boat: boat, stale: !online, updated_at: seen.toISOString() },
     skills: {
       total_level: skills.reduce((sum, s) => sum + s.level, 0),

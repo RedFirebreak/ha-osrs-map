@@ -323,6 +323,17 @@ mod tests {
     }
 
     #[test]
+    fn a_konar_task_area_is_no_place_on_the_map() {
+        // slayerTaskComplete names the area of a Konar task (hub D-141), not a tile.
+        let mut done = event("1", "slayer_task_complete", "a");
+        done.data = Some(serde_json::json!({"type": "slayerTaskComplete", "data": {
+            "task": "Wyrms", "location": "Karuulm Slayer Dungeon", "amount": 130
+        }}));
+        let (location, _, _) = event_details(&done);
+        assert!(location.is_none());
+    }
+
+    #[test]
     fn extracts_death_location_and_top_items() {
         let mut death = event("1", "death", "a");
         death.data = Some(serde_json::json!({"type": "death", "data": {
