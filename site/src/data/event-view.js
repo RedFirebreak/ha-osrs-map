@@ -28,7 +28,7 @@ export const EVENT_KINDS = [
     key: "other",
     label: "Other",
     color: "#f2f2f2",
-    types: ["collection_log", "achievement_diary", "combat_task", "superior_spawn"],
+    types: ["collection_log", "achievement_diary", "combat_task", "superior_spawn", "slayer_task_complete"],
   },
 ];
 
@@ -107,6 +107,7 @@ export function eventIconUrl(event) {
     case "level_up":
       return skillIconUrl(event.skill);
     case "superior_spawn":
+    case "slayer_task_complete":
       return skillIconUrl("slayer");
     case "achievement_diary":
       return Item.imageUrl(DIARY_CAPE_ITEM, 1);
@@ -138,6 +139,8 @@ export function eventLabel(event) {
       return "Combat task";
     case "superior_spawn":
       return "Superior";
+    case "slayer_task_complete":
+      return "Slayer task";
     default:
       return null;
   }

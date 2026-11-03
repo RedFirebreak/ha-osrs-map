@@ -1,6 +1,6 @@
 //! Converts hub snapshot accounts into the member arrays the site understands,
 //! plus the display details (`HubMeta`) the site shows next to them.
-use crate::hub::models::{HubAccount, HubItems, HubSkills};
+use crate::hub::models::{HubAccount, HubItems, HubSkills, HubSlayer};
 use crate::models::MemberData;
 use crate::osrs::{equipment_slot_index, skill_index, SKILL_ORDER};
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,11 @@ pub(crate) struct HubMeta {
     /// doesn't send them (an older hub, or `activity` not shared).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_prayers: Option<Vec<String>>,
+    /// The slayer task, points and streaks, as the hub says (D-141); left
+    /// out until the plugin sent them, from an older hub, and without
+    /// `activity`. A task stays assigned while the player is offline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slayer: Option<HubSlayer>,
     /// The last game state the plugin sent; `online` is the one to trust.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_state: Option<String>,
@@ -89,6 +94,7 @@ impl HubMeta {
             ),
             spellbook: account.spellbook.clone(),
             active_prayers: account.active_prayers.clone(),
+            slayer: account.slayer.clone(),
             game_state: account.game_state.clone(),
             is_on_boat: account
                 .location
@@ -336,6 +342,8 @@ mod tests {
             "last_seen": "2026-09-29T14:13:42.046Z",
             "spellbook": "lunar",
             "active_prayers": ["PROTECT_FROM_MELEE", "PIETY"],
+            "slayer": {"task": {"name": "Kraken", "location": null, "remaining": 87, "amount": 120},
+                       "points": 1234, "streaks": {"normal": 99, "wilderness": 12, "mortimer": 5}},
             "hp": {"current": 90, "max": 99},
             "prayer": {"current": 50, "max": 99},
             "location": {"x": 3164, "y": 3487, "plane": 0, "is_on_boat": false, "stale": false,
@@ -427,6 +435,40 @@ mod tests {
             .unwrap()
             .get("active_prayers")
             .is_none());
+    }
+
+    #[test]
+    fn slayer_follows_the_hub() {
+        let meta = MemberSections::from_account(&full_account(), None)
+            .meta
+            .unwrap();
+        let slayer = meta.slayer.clone().unwrap();
+        assert_eq!(
+            slayer.task.as_ref().unwrap().name.as_deref(),
+            Some("Kraken")
+        );
+        assert_eq!(slayer.task.as_ref().unwrap().remaining, 87);
+        assert_eq!(slayer.points, Some(1234));
+        assert_eq!(slayer.streaks.wilderness, Some(12));
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(json["slayer"]["task"]["amount"], 120);
+        assert_eq!(json["slayer"]["streaks"]["normal"], 99);
+
+        // Between tasks: no task, the points and streaks still.
+        let mut between = full_account();
+        between.slayer.as_mut().unwrap().task = None;
+        let meta = MemberSections::from_account(&between, None).meta.unwrap();
+        assert_eq!(meta.slayer.as_ref().unwrap().task, None);
+        assert_eq!(
+            serde_json::to_value(&meta).unwrap()["slayer"]["task"],
+            serde_json::Value::Null
+        );
+
+        // A hub from before D-141, or a key without `activity`: nothing to show.
+        let hidden = without_category("activity", &["online", "slayer"]);
+        let meta = MemberSections::from_account(&hidden, None).meta.unwrap();
+        assert_eq!(meta.slayer, None);
+        assert!(serde_json::to_value(&meta).unwrap().get("slayer").is_none());
     }
 
     #[test]
