@@ -146,6 +146,11 @@ pub(crate) struct HubAccount {
     /// `activity` category.
     #[serde(default)]
     pub slayer: Option<HubSlayer>,
+    /// Run energy, special attack, poison, the wilderness level and the
+    /// running effects as they stand now (hub D-143): `null` until the plugin
+    /// sent them, absent from hubs before it and without `activity`.
+    #[serde(default)]
+    pub status: Option<HubStatus>,
     #[serde(default)]
     pub hp: Option<Meter>,
     #[serde(default)]
@@ -197,6 +202,60 @@ pub(crate) struct HubSlayerStreaks {
     pub wilderness: Option<i64>,
     #[serde(default)]
     pub mortimer: Option<i64>,
+}
+
+/// An account's status on `GET /snapshot` (hub D-143). The map passes it on
+/// as it is, in the member's meta. Offline the hub sends no effects, no
+/// poison and no wilderness level.
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct HubStatus {
+    /// Whole percent.
+    #[serde(default)]
+    pub run_energy: i64,
+    #[serde(default)]
+    pub running: bool,
+    /// Whole percent.
+    #[serde(default)]
+    pub special_attack: i64,
+    #[serde(default)]
+    pub poison: HubPoison,
+    /// Null outside the wilderness, and for a key without `location_live`.
+    #[serde(default)]
+    pub wilderness_level: Option<i64>,
+    #[serde(default)]
+    pub effects: Vec<HubEffect>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct HubPoison {
+    /// "none", "poison" or "venom".
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The next hit; null without poison.
+    #[serde(default)]
+    pub damage: Option<i64>,
+}
+
+impl Default for HubPoison {
+    fn default() -> Self {
+        Self {
+            kind: "none".into(),
+            damage: None,
+        }
+    }
+}
+
+/// A potion or other effect that is running (RuneLite's GameTimer name in
+/// lower case as `id`).
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct HubEffect {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// ISO time.
+    pub ends_at: String,
+    #[serde(default)]
+    pub precision_ms: i64,
 }
 
 /// `GET /me`.

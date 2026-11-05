@@ -450,3 +450,115 @@ player-profile-view .player-stats__name {
   color: #aaa;
   font-size: 0.85rem;
 }
+
+.player-profile-view__status-block:empty,
+.player-profile-view__effects:empty {
+  display: none;
+}
+
+.player-profile-view__status-block,
+.player-profile-view__effects {
+  margin-top: 10px;
+}
+
+.player-profile-view__status-block .status__orbs {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+
+.player-profile-view__status-block .status-orb {
+  --size: 52px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.player-profile-view__status-block .status-orb::before {
+  content: "";
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: conic-gradient(var(--orb-color) var(--orb-share), rgba(255, 255, 255, 0.12) 0);
+  -webkit-mask: radial-gradient(circle, transparent 18px, #000 19px);
+  mask: radial-gradient(circle, transparent 18px, #000 19px);
+}
+
+.player-profile-view__status-block .status-orb__value {
+  position: absolute;
+  top: 0;
+  height: var(--size);
+  line-height: var(--size);
+  font-variant-numeric: tabular-nums;
+}
+
+.player-profile-view__status-block .status-orb__label {
+  color: #aaa;
+  font-size: 12px;
+}
+
+.player-profile-view__status-block .status__badges {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.player-profile-view__status-block .status__badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.player-profile-view__status-block .status__badge--wilderness {
+  background: rgba(181, 55, 47, 0.25);
+  color: #ff9d94;
+}
+
+.player-profile-view__status-block .status__badge--poison {
+  background: rgba(60, 160, 60, 0.25);
+  color: #9be29b;
+}
+
+.player-profile-view__status-block .status__badge--venom {
+  background: rgba(30, 130, 120, 0.3);
+  color: #8fe0d6;
+}
+
+.player-profile-view__effects .status__effects {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.player-profile-view__effects .status__effect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 52px;
+  padding: 4px 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: help;
+}
+
+.player-profile-view__effects .status__effect-icon {
+  width: 36px;
+  height: 32px;
+  object-fit: scale-down;
+  line-height: 32px;
+  text-align: center;
+}
+
+.player-profile-view__effects .status__effect-left {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}

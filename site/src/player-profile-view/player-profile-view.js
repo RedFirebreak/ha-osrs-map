@@ -12,6 +12,7 @@ import { activityLabel, hiscoresView } from "../data/hiscores";
 import { ACCOUNT_TYPE_BADGES } from "../player-roster/player-roster";
 import { activePrayers, prayerElement } from "../data/prayers";
 import { slayerElement, slayerState } from "../data/slayer";
+import { effectsElement, statusElement, statusState } from "../data/status";
 import { gearTrips } from "../data/gear-trips";
 
 const PROFILE_TABS = [
@@ -135,6 +136,7 @@ export class PlayerProfileView extends BaseElement {
       this.subscribe(`${topic}:${this.playerName}`, () => this.updatePrayers());
     }
     this.subscribe(`meta:${this.playerName}`, () => this.updateSlayer());
+    this.subscribe(`meta:${this.playerName}`, () => this.updateStatus());
     // A tab shows what the player shares: draw it again when that changes.
     this.shared = this.sharedNow();
     this.subscribe(`meta:${this.playerName}`, () => {
@@ -211,6 +213,38 @@ export class PlayerProfileView extends BaseElement {
     this.prayersEl.replaceChildren(el("span", "player-profile-view__prayers-title", "Prayers"), list);
   }
 
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    clearInterval(this.effectsTimer);
+  }
+
+  /**
+   * The overview's status (hub D-143): run and special orbs with poison and the wilderness under the
+   * HP and prayer bars, and the running effects as icon cards under the prayers, counting down every
+   * second. Nothing when the hub doesn't say.
+   */
+  updateStatus() {
+    if (!this.statusBlockEl?.isConnected) return;
+    const state = statusState(this.member);
+    const key = state === null ? null : JSON.stringify(state);
+    if (key === this.statusShown) return;
+    this.statusShown = key;
+    clearInterval(this.effectsTimer);
+    if (state === null) {
+      this.statusBlockEl.replaceChildren();
+      this.effectsEl.replaceChildren();
+      return;
+    }
+    this.statusBlockEl.replaceChildren(statusElement(state));
+    const { list, tick } = effectsElement(state);
+    this.effectsEl.replaceChildren(...(state.effects.length > 0 ? [list] : []));
+    if (state.effects.length > 0) {
+      this.effectsTimer = setInterval(() => {
+        if (tick(Date.now()) === 0) clearInterval(this.effectsTimer);
+      }, 1000);
+    }
+  }
+
   /** The overview's slayer task, points and streak (hub D-141); nothing when the hub doesn't say. */
   updateSlayer() {
     if (!this.slayerEl?.isConnected) return;
@@ -273,10 +307,16 @@ export class PlayerProfileView extends BaseElement {
       const stats = document.createElement("player-stats");
       stats.setAttribute("player-name", this.playerName);
       vitals.appendChild(stats);
+      this.statusBlockEl = el("div", "player-profile-view__status-block");
+      vitals.appendChild(this.statusBlockEl);
       this.prayersEl = el("div", "player-profile-view__prayers");
       vitals.appendChild(this.prayersEl);
       this.prayersShown = null;
       this.updatePrayers();
+      this.effectsEl = el("div", "player-profile-view__effects");
+      vitals.appendChild(this.effectsEl);
+      this.statusShown = undefined;
+      this.updateStatus();
       this.slayerEl = el("div", "player-profile-view__slayer");
       vitals.appendChild(this.slayerEl);
       this.slayerShown = undefined;
