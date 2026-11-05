@@ -1,6 +1,6 @@
 //! Converts hub snapshot accounts into the member arrays the site understands,
 //! plus the display details (`HubMeta`) the site shows next to them.
-use crate::hub::models::{HubAccount, HubItems, HubSkills, HubSlayer};
+use crate::hub::models::{HubAccount, HubItems, HubSkills, HubSlayer, HubStatus};
 use crate::models::MemberData;
 use crate::osrs::{equipment_slot_index, skill_index, SKILL_ORDER};
 use serde::{Deserialize, Serialize};
@@ -41,6 +41,11 @@ pub(crate) struct HubMeta {
     /// `activity`. A task stays assigned while the player is offline.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slayer: Option<HubSlayer>,
+    /// Run energy, special attack, poison, the wilderness level and the
+    /// running effects, as the hub says (D-143); left out until the plugin
+    /// sent them, from an older hub, and without `activity`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<HubStatus>,
     /// The last game state the plugin sent; `online` is the one to trust.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_state: Option<String>,
@@ -95,6 +100,7 @@ impl HubMeta {
             spellbook: account.spellbook.clone(),
             active_prayers: account.active_prayers.clone(),
             slayer: account.slayer.clone(),
+            status: account.status.clone(),
             game_state: account.game_state.clone(),
             is_on_boat: account
                 .location
@@ -344,6 +350,10 @@ mod tests {
             "active_prayers": ["PROTECT_FROM_MELEE", "PIETY"],
             "slayer": {"task": {"name": "Kraken", "location": null, "remaining": 87, "amount": 120},
                        "points": 1234, "streaks": {"normal": 99, "wilderness": 12, "mortimer": 5}},
+            "status": {"run_energy": 73, "running": true, "special_attack": 50,
+                       "poison": {"type": "venom", "damage": 8}, "wilderness_level": 23,
+                       "effects": [{"id": "stamina", "name": "Stamina",
+                                    "ends_at": "2026-09-29T14:15:00.000Z", "precision_ms": 6000}]},
             "hp": {"current": 90, "max": 99},
             "prayer": {"current": 50, "max": 99},
             "location": {"x": 3164, "y": 3487, "plane": 0, "is_on_boat": false, "stale": false,
@@ -469,6 +479,27 @@ mod tests {
         let meta = MemberSections::from_account(&hidden, None).meta.unwrap();
         assert_eq!(meta.slayer, None);
         assert!(serde_json::to_value(&meta).unwrap().get("slayer").is_none());
+    }
+
+    #[test]
+    fn status_follows_the_hub() {
+        let meta = MemberSections::from_account(&full_account(), None)
+            .meta
+            .unwrap();
+        let status = meta.status.clone().unwrap();
+        assert_eq!(status.run_energy, 73);
+        assert_eq!(status.poison.kind, "venom");
+        assert_eq!(status.wilderness_level, Some(23));
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(json["status"]["poison"]["type"], "venom");
+        assert_eq!(json["status"]["effects"][0]["id"], "stamina");
+        assert_eq!(json["status"]["effects"][0]["precision_ms"], 6000);
+
+        // A hub from before D-143, or a key without `activity`: nothing to show.
+        let hidden = without_category("activity", &["online", "slayer", "status"]);
+        let meta = MemberSections::from_account(&hidden, None).meta.unwrap();
+        assert_eq!(meta.status, None);
+        assert!(serde_json::to_value(&meta).unwrap().get("status").is_none());
     }
 
     #[test]

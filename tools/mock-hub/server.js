@@ -372,6 +372,39 @@ function slayer(account) {
   };
 }
 
+// Effects that run in turns (hub D-143), as [id, name, minutes, precision ms].
+const STATUS_EFFECTS = [
+  ["stamina", "Stamina", 2, 6000],
+  ["divine_super_combat", "Divine super combat", 5, 600],
+  ["antivenom", "Anti-venom", 6, 18000],
+  ["teleblock", "Teleblock", 2.5, 600],
+];
+
+/**
+ * The account's status as the hub says (hub D-143): run and special that move with the clock, the
+ * effects started at the top of every 8 minutes, the wilderness level north of the ditch. Offline no
+ * effects, no poison and no wilderness level.
+ */
+function status(account, x, y, online) {
+  const now = Date.now();
+  const wave = (period, phase) => (1 + Math.sin(now / period + account.phase + phase)) / 2;
+  const start = Math.floor(now / 480000) * 480000;
+  const effects = STATUS_EFFECTS.filter((_, i) => (i + account.phase) % 2 === 0)
+    .map(([id, name, minutes, precision], i) => ({ id, name, endsAt: start + i * 20000 + minutes * 60000, precision }))
+    .filter((e) => e.endsAt > now)
+    .map((e) => ({ id: e.id, name: e.name, ends_at: new Date(e.endsAt).toISOString(), precision_ms: e.precision }));
+  const level = y >= 3520 && y < 4000 && x >= 2944 && x <= 3392 ? Math.floor((y - 3520) / 8) + 1 : null;
+  const poisoned = online && Math.floor(now / 60000 + account.phase) % 5 === 0;
+  return {
+    run_energy: Math.round(100 * wave(61000, 1)),
+    running: true,
+    special_attack: Math.round(10 * wave(97000, 3)) * 10,
+    poison: poisoned ? { type: account.phase % 2 ? "venom" : "poison", damage: 6 } : { type: "none", damage: null },
+    wilderness_level: online ? level : null,
+    effects: online ? effects : [],
+  };
+}
+
 function snapshotAccount(account) {
   const { x, y, plane, boat, world, online } = position(account);
   const seen = lastSeen(account, online);
@@ -398,6 +431,7 @@ function snapshotAccount(account) {
     // The prayers that are on (hub D-119): none while offline, as the hub says.
     active_prayers: online ? PRAYER_SETS[account.phase % PRAYER_SETS.length] : [],
     slayer: slayer(account),
+    status: status(account, x, y, online),
     location: { x, y, plane, is_on_boat: boat, stale: !online, updated_at: seen.toISOString() },
     skills: {
       total_level: skills.reduce((sum, s) => sum + s.level, 0),
