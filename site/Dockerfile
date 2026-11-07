@@ -1,7 +1,7 @@
 ###############################################
 # Frontend Image
 ###############################################
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run bundle
 
-FROM node:24-alpine
+FROM node:26-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
